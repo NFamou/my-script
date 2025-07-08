@@ -3,7 +3,7 @@
 set -e  # 一旦出错就退出，避免后续命令执行错误
 
 # 安装必要工具
-apt install -y curl wget sudo iptables ip6tables net-tools iproute2 iptables-persistent
+apt install -y curl wget sudo iptables net-tools iproute2 iptables-persistent
 
 # 配置 ip6tables 防火墙规则（最小可用）
 echo "[+] 设置默认策略..."
