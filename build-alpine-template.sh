@@ -3,7 +3,7 @@
 # ========== 可调参数 ==========
 CTID=100
 HOSTNAME="alpine-template"
-PASSWORD="root"                      # 容器内 root 密码
+PASSWORD="passwdroot"                      # 容器内 root 密码
 TEMPLATE_NAME="alpine-3.20-default_20240908_amd64.tar.xz"
 TEMPLATE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/$TEMPLATE_NAME"
 TEMPLATE_PATH="/var/lib/vz/template/cache/$TEMPLATE_NAME"
