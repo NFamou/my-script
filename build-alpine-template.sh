@@ -3,7 +3,7 @@
 # ========== 可调参数 ==========
 CTID=100
 HOSTNAME="alpine-template"
-PASSWORD="passwdroot"                      # 容器内 root 密码
+PASSWORD="changeme123"                      # 容器内 root 密码，至少5位
 TEMPLATE_NAME="alpine-3.20-default_20240908_amd64.tar.xz"
 TEMPLATE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/$TEMPLATE_NAME"
 TEMPLATE_PATH="/var/lib/vz/template/cache/$TEMPLATE_NAME"
@@ -14,7 +14,7 @@ IP="172.16.1.200/24"
 GATEWAY="172.16.1.1"
 STORAGE="local"                     # 可改为 local-lvm，如果你有这个存储池
 
-# ========== 工具函数 ==========
+# ========== 颜色输出函数 ==========
 _color() { echo -e "\033[$1m$2\033[0m"; }
 green()  { _color "32;1" "$1"; }
 red()    { _color "31;1" "$1"; }
@@ -47,10 +47,13 @@ pct exec $CTID -- sh -c "sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' 
 pct exec $CTID -- apk update
 pct exec $CTID -- apk add openssh curl wget sudo nano zip
 
-# 设置 root 密码 & SSH
+# 设置 root 密码 & 启用 SSH 开机启动
 pct exec $CTID -- sh -c "echo root:$PASSWORD | chpasswd"
 pct exec $CTID -- rc-update add sshd default
-pct exec $CTID -- ssh-keygen -A
+
+# 不生成 SSH key，首次启动时用户可手动生成
+# pct exec $CTID -- ssh-keygen -A
+
 pct exec $CTID -- rc-service sshd start
 
 # ========== 打包模板 ==========
