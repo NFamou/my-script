@@ -16,7 +16,6 @@ GATEWAY="172.16.1.1"
 
 echo "📦 检查 Alpine 3.20 模板..."
 
-# 模板存在检查
 if [ ! -f "$TEMPLATE_PATH" ]; then
   echo "❌ 模板不存在：$TEMPLATE_PATH"
   echo "请先执行："
@@ -36,22 +35,21 @@ pct create $CTID local:vztmpl/$TEMPLATE_NAME \
 echo "▶️ 启动容器并安装组件..."
 pct start $CTID
 
-# 切换阿里云镜像源
 pct exec $CTID -- sh -c "echo 'https://mirrors.aliyun.com/alpine/v3.20/main' > /etc/apk/repositories"
 pct exec $CTID -- sh -c "echo 'https://mirrors.aliyun.com/alpine/v3.20/community' >> /etc/apk/repositories"
 
-# 安装 SSH + 常用工具
 pct exec $CTID -- apk update
 pct exec $CTID -- apk add openssh curl wget sudo nano zip
 
-# SSH 配置：允许 root 登录 + 密码认证
 pct exec $CTID -- sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
 pct exec $CTID -- sh -c "echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config"
-pct exec $CTID -- echo "root:$PASSWORD" | chpasswd
+
+# 【重点修正】修改容器root密码，避免宿主机被改
+pct exec $CTID -- sh -c "echo 'root:$PASSWORD' | chpasswd"
+
 pct exec $CTID -- rc-update add sshd
 pct exec $CTID -- rc-service sshd start
 
-# 清理缓存
 pct exec $CTID -- apk cache clean
 
 echo "🛑 停止容器准备打包..."
