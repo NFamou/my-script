@@ -80,4 +80,4 @@ pct destroy $CTID
 green "✅ 自定义 Alpine SSH 模板已创建："
 echo "    $OUTPUT_TEMPLATE"
 green "🌐 IP: $IP 网关: $GATEWAY 网桥: $BRIDGE"
-green "🔧 已预安装：openssh curl wget sudo nano zip"
+green "🔧 已预安装：openssh curl wget sudo nano zip bash"
