@@ -36,7 +36,7 @@ pct create $CTID "$TEMPLATE_PATH" \
     --password "$PASSWORD" \
     --net0 "name=eth0,bridge=$BRIDGE,ip=$IP,gw=$GATEWAY" \
     --features nesting=1 \
-    --unprivileged 1
+    --unprivileged 0
 
 # ========== 安装软件 ==========
 green "▶️ 启动容器并安装组件..."
