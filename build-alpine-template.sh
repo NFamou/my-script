@@ -12,7 +12,7 @@ OUTPUT_TEMPLATE="/var/lib/vz/template/cache/alpine-ssh-template.tar.gz"
 BRIDGE="vmbr1"
 IP="172.16.1.100/24"
 GATEWAY="172.16.1.1"
-STORAGE="local"                     # 可改为 local-lvm，如果你有这个存储池
+STORAGE="local"  # 可改为 local-lvm，如果你有这个存储池
 
 # ========== 颜色输出函数 ==========
 _color() { echo -e "\033[$1m$2\033[0m"; }
@@ -38,32 +38,30 @@ pct create $CTID "$TEMPLATE_PATH" \
     --features nesting=1 \
     --unprivileged 1 || { red "❌ 容器创建失败"; exit 1; }
 
-# ========== 启动容器并安装组件 ==========
+# ========== 安装软件 ==========
 green "▶️ 启动容器并安装组件..."
 pct start $CTID
 sleep 3
 
-# 更换源、安装软件
-pct exec $CTID -- sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories
+pct exec $CTID -- sh -c "sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories"
 pct exec $CTID -- apk update
-pct exec $CTID -- apk add openssh curl wget sudo nano zip
+pct exec $CTID -- apk add openssh curl wget sudo nano zip bash
 
-# 设置 root 密码
+# 设置 root 密码 & 添加 sshd 自启
 pct exec $CTID -- sh -c "echo root:$PASSWORD | chpasswd"
+pct exec $CTID -- rc-update add sshd default
 
-# 修复 /var/empty 权限，避免 sshd 启动失败
-pct exec $CTID -- mkdir -p /var/empty
-pct exec $CTID -- chown root:root /var/empty
-pct exec $CTID -- chmod 711 /var/empty
-
-# 设置 SSH 登录策略
+# 开启 root 密码登录和密码认证
 pct exec $CTID -- sh -c "sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config || echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config"
 pct exec $CTID -- sh -c "sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config || echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config"
 
-# 开机自启 sshd + 初始化 key + 启动服务
-pct exec $CTID -- rc-update add sshd default
+# 修复 /var/empty 权限
+pct exec $CTID -- chown root:root /var/empty
+pct exec $CTID -- chmod 755 /var/empty
+
+# 启动 sshd
 pct exec $CTID -- ssh-keygen -A
-pct exec $CTID -- rc-service sshd start || pct exec $CTID -- rc-service sshd restart
+pct exec $CTID -- rc-service sshd start
 pct exec $CTID -- rc-service sshd status
 sleep 2
 
@@ -84,4 +82,4 @@ pct destroy $CTID
 green "✅ 自定义 Alpine SSH 模板已创建："
 echo "    $OUTPUT_TEMPLATE"
 green "🌐 IP: $IP 网关: $GATEWAY 网桥: $BRIDGE"
-green "🔧 已预安装：openssh curl wget sudo nano zip"
+green "🔧 已预安装：openssh curl wget sudo nano zip bash"
