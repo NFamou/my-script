@@ -31,12 +31,12 @@ fi
 green "🚀 创建容器 CTID=$CTID..."
 pct destroy $CTID 2>/dev/null
 pct create $CTID "$TEMPLATE_PATH" \
-    -storage "$STORAGE" \
-    -hostname "$HOSTNAME" \
-    -password "$PASSWORD" \
-    -net0 "name=eth0,bridge=$BRIDGE,ip=$IP,gw=$GATEWAY" \
-    -features nesting=1 \
-    -unprivileged 1 || { red "❌ 容器创建失败"; exit 1; }
+    --storage "$STORAGE" \
+    --hostname "$HOSTNAME" \
+    --password "$PASSWORD" \
+    --net0 "name=eth0,bridge=$BRIDGE,ip=$IP,gw=$GATEWAY" \
+    --features nesting=1 \
+    --unprivileged 1 || { red "❌ 容器创建失败"; exit 1; }
 
 # ========== 安装软件 ==========
 green "▶️ 启动容器并安装组件..."
@@ -52,7 +52,7 @@ pct exec $CTID -- sh -c "echo root:$PASSWORD | chpasswd"
 pct exec $CTID -- rc-update add sshd default
 
 # 不生成 SSH key，首次启动时用户可手动生成
-# pct exec $CTID -- ssh-keygen -A
+pct exec $CTID -- ssh-keygen -A
 
 pct exec $CTID -- rc-service sshd start
 
