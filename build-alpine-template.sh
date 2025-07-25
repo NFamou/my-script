@@ -52,11 +52,12 @@ pct exec $CTID -- sh -c "echo root:$PASSWORD | chpasswd"
 pct exec $CTID -- rc-update add sshd default
 
 # 开启 root 密码登录和密码认证
-pct exec $CTID -- sh -c "sed -i 's/^#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config || echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config"
-pct exec $CTID -- sh -c "sed -i 's/^PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config || echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config"
+pct exec $CTID -- sh -c "sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config || echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config"
+pct exec $CTID -- sh -c "sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config || echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config"
 
 pct exec $CTID -- ssh-keygen -A
-pct exec $CTID -- rc-service sshd start
+pct exec $CTID -- rc-service sshd restart
+sleep 2
 
 # ========== 打包模板 ==========
 green "🛑 停止容器准备打包..."
