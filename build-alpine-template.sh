@@ -1,64 +1,73 @@
 #!/bin/bash
 
-# Alpine 模板信息（3.20）
-TEMPLATE_NAME="alpine-3.20-default_20240908_amd64.tar.xz"
-TEMPLATE_PATH="/var/lib/vz/template/cache/$TEMPLATE_NAME"
-CUSTOM_TEMPLATE="/var/lib/vz/template/cache/alpine-ssh-template.tar.gz"
-
-# 容器配置
+# ========== 可调参数 ==========
 CTID=100
-HOSTNAME="alpine-ssh"
-PASSWORD="root123"
-STORAGE="local"
+HOSTNAME="alpine-template"
+PASSWORD="root"                      # 容器内 root 密码
+TEMPLATE_NAME="alpine-3.20-default_20240908_amd64.tar.xz"
+TEMPLATE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/$TEMPLATE_NAME"
+TEMPLATE_PATH="/var/lib/vz/template/cache/$TEMPLATE_NAME"
+OUTPUT_TEMPLATE="/var/lib/vz/template/cache/alpine-ssh-template.tar.gz"
+
 BRIDGE="vmbr1"
-IPADDR="172.16.1.200/24"
+IP="172.16.1.200/24"
 GATEWAY="172.16.1.1"
+STORAGE="local"                     # 可改为 local-lvm，如果你有这个存储池
 
-echo "📦 检查 Alpine 3.20 模板..."
+# ========== 工具函数 ==========
+_color() { echo -e "\033[$1m$2\033[0m"; }
+green()  { _color "32;1" "$1"; }
+red()    { _color "31;1" "$1"; }
 
+# ========== 检查模板 ==========
 if [ ! -f "$TEMPLATE_PATH" ]; then
-  echo "❌ 模板不存在：$TEMPLATE_PATH"
-  echo "请先执行："
-  echo "  pveam update"
-  echo "  pveam download local $TEMPLATE_NAME"
-  exit 1
+    green "📥 下载 Alpine 3.20 模板..."
+    wget -O "$TEMPLATE_PATH" "$TEMPLATE_URL" || { red "❌ 下载失败"; exit 1; }
+else
+    green "📦 模板已存在：$TEMPLATE_NAME"
 fi
 
-echo "🚀 创建容器 CTID=$CTID..."
-pct create $CTID local:vztmpl/$TEMPLATE_NAME \
-  --hostname $HOSTNAME \
-  --password $PASSWORD \
-  --rootfs ${STORAGE}:4 \
-  --unprivileged 0 \
-  --net0 name=eth0,bridge=$BRIDGE,ip=$IPADDR,gw=$GATEWAY
+# ========== 创建容器 ==========
+green "🚀 创建容器 CTID=$CTID..."
+pct destroy $CTID 2>/dev/null
+pct create $CTID "$TEMPLATE_PATH" \
+    -storage "$STORAGE" \
+    -hostname "$HOSTNAME" \
+    -password "$PASSWORD" \
+    -net0 "name=eth0,bridge=$BRIDGE,ip=$IP,gw=$GATEWAY" \
+    -features nesting=1 \
+    -unprivileged 1 || { red "❌ 容器创建失败"; exit 1; }
 
-echo "▶️ 启动容器并安装组件..."
+# ========== 安装软件 ==========
+green "▶️ 启动容器并安装组件..."
 pct start $CTID
+sleep 3
 
-pct exec $CTID -- sh -c "echo 'https://mirrors.aliyun.com/alpine/v3.20/main' > /etc/apk/repositories"
-pct exec $CTID -- sh -c "echo 'https://mirrors.aliyun.com/alpine/v3.20/community' >> /etc/apk/repositories"
-
+pct exec $CTID -- sh -c "sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories"
 pct exec $CTID -- apk update
 pct exec $CTID -- apk add openssh curl wget sudo nano zip
 
-pct exec $CTID -- sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
-pct exec $CTID -- sh -c "echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config"
-
-# 【重点修正】修改容器root密码，避免宿主机被改
-pct exec $CTID -- sh -c "echo 'root:$PASSWORD' | chpasswd"
-
-pct exec $CTID -- rc-update add sshd
+# 设置 root 密码 & SSH
+pct exec $CTID -- sh -c "echo root:$PASSWORD | chpasswd"
+pct exec $CTID -- rc-update add sshd default
+pct exec $CTID -- ssh-keygen -A
 pct exec $CTID -- rc-service sshd start
 
-pct exec $CTID -- apk cache clean
-
-echo "🛑 停止容器准备打包..."
+# ========== 打包模板 ==========
+green "🛑 停止容器准备打包..."
 pct stop $CTID
 
-echo "📦 打包为模板：$CUSTOM_TEMPLATE"
-tar --numeric-owner -czf "$CUSTOM_TEMPLATE" -C "/var/lib/lxc/$CTID/rootfs" .
+green "📦 挂载容器目录..."
+MOUNT_DIR=$(pct mount $CTID | awk -F"'" '{print $2}')
+[ -d "$MOUNT_DIR" ] || { red "❌ 挂载失败"; exit 1; }
 
-echo "✅ 自定义 Alpine SSH 模板已创建："
-echo "    $CUSTOM_TEMPLATE"
-echo "🌐 IP: $IPADDR 网关: $GATEWAY 网桥: $BRIDGE"
-echo "🔧 已预安装：openssh curl wget sudo nano zip"
+green "📦 打包模板为：$OUTPUT_TEMPLATE"
+tar --numeric-owner -czf "$OUTPUT_TEMPLATE" -C "$MOUNT_DIR" .
+
+pct unmount $CTID
+pct destroy $CTID
+
+green "✅ 自定义 Alpine SSH 模板已创建："
+echo "    $OUTPUT_TEMPLATE"
+green "🌐 IP: $IP 网关: $GATEWAY 网桥: $BRIDGE"
+green "🔧 已预安装：openssh curl wget sudo nano zip"
