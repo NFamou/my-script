@@ -38,29 +38,33 @@ pct create $CTID "$TEMPLATE_PATH" \
     --features nesting=1 \
     --unprivileged 1 || { red "❌ 容器创建失败"; exit 1; }
 
-# ========== 安装软件 ==========
+# ========== 启动容器并安装组件 ==========
 green "▶️ 启动容器并安装组件..."
 pct start $CTID
 sleep 3
 
-pct exec $CTID -- sh -c "sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories"
+# 更换源、安装软件
+pct exec $CTID -- sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories
 pct exec $CTID -- apk update
-pct exec $CTID -- apk add openssh curl wget sudo nano zip bash
+pct exec $CTID -- apk add openssh curl wget sudo nano zip
 
-# 设置 root 密码 & 添加 sshd 自启
+# 设置 root 密码
 pct exec $CTID -- sh -c "echo root:$PASSWORD | chpasswd"
-pct exec $CTID -- rc-update add sshd default
 
-# 开启 root 密码登录和密码认证
+# 修复 /var/empty 权限，避免 sshd 启动失败
+pct exec $CTID -- mkdir -p /var/empty
+pct exec $CTID -- chown root:root /var/empty
+pct exec $CTID -- chmod 711 /var/empty
+
+# 设置 SSH 登录策略
 pct exec $CTID -- sh -c "sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config || echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config"
 pct exec $CTID -- sh -c "sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config || echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config"
 
-# 修正 /var/empty 目录权限，避免 sshd 启动失败
-pct exec $CTID -- chown root:root /var/empty
-pct exec $CTID -- chmod 755 /var/empty
-
+# 开机自启 sshd + 初始化 key + 启动服务
+pct exec $CTID -- rc-update add sshd default
 pct exec $CTID -- ssh-keygen -A
-pct exec $CTID -- rc-service sshd restart
+pct exec $CTID -- rc-service sshd start || pct exec $CTID -- rc-service sshd restart
+pct exec $CTID -- rc-service sshd status
 sleep 2
 
 # ========== 打包模板 ==========
@@ -80,4 +84,4 @@ pct destroy $CTID
 green "✅ 自定义 Alpine SSH 模板已创建："
 echo "    $OUTPUT_TEMPLATE"
 green "🌐 IP: $IP 网关: $GATEWAY 网桥: $BRIDGE"
-green "🔧 已预安装：openssh curl wget sudo nano zip bash"
+green "🔧 已预安装：openssh curl wget sudo nano zip"
