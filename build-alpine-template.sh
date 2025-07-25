@@ -10,7 +10,7 @@ TEMPLATE_PATH="/var/lib/vz/template/cache/$TEMPLATE_NAME"
 OUTPUT_TEMPLATE="/var/lib/vz/template/cache/alpine-ssh-template.tar.gz"
 
 BRIDGE="vmbr1"
-IP="172.16.1.200/24"
+IP="172.16.1.100/24"
 GATEWAY="172.16.1.1"
 STORAGE="local"                     # 可改为 local-lvm，如果你有这个存储池
 
@@ -51,9 +51,12 @@ pct exec $CTID -- apk add openssh curl wget sudo nano zip
 pct exec $CTID -- sh -c "echo root:$PASSWORD | chpasswd"
 pct exec $CTID -- rc-update add sshd default
 
-# 不生成 SSH key，首次启动时用户可手动生成
-pct exec $CTID -- ssh-keygen -A
+# 允许 root 密码登录
+pct exec $CTID -- sh -c "sed -i '/^#PermitRootLogin/s/^#//' /etc/ssh/sshd_config"
+pct exec $CTID -- sh -c "sed -i 's/^PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config || echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config"
+pct exec $CTID -- sh -c "sed -i 's/^PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config || echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config"
 
+pct exec $CTID -- ssh-keygen -A
 pct exec $CTID -- rc-service sshd start
 
 # ========== 打包模板 ==========
