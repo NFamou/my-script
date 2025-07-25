@@ -47,13 +47,12 @@ pct exec $CTID -- sh -c "sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' 
 pct exec $CTID -- apk update
 pct exec $CTID -- apk add openssh curl wget sudo nano zip
 
-# 设置 root 密码 & 启用 SSH 开机启动
+# 设置 root 密码 & 添加 sshd 自启
 pct exec $CTID -- sh -c "echo root:$PASSWORD | chpasswd"
 pct exec $CTID -- rc-update add sshd default
 
-# 允许 root 密码登录
-pct exec $CTID -- sh -c "sed -i '/^#PermitRootLogin/s/^#//' /etc/ssh/sshd_config"
-pct exec $CTID -- sh -c "sed -i 's/^PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config || echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config"
+# 开启 root 密码登录和密码认证
+pct exec $CTID -- sh -c "sed -i 's/^#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config || echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config"
 pct exec $CTID -- sh -c "sed -i 's/^PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config || echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config"
 
 pct exec $CTID -- ssh-keygen -A
