@@ -72,8 +72,8 @@ pct exec $CTID -- ssh-keygen -A
 pct exec $CTID -- rc-service sshd start
 pct exec $CTID -- rc-service sshd status || red "❌ SSHD 启动失败"
 
-#添加自定义SSH欢迎界面
-pct exec $CTID -- cat > /etc/motd << 'EOF'
+# 添加自定义SSH欢迎界面（写入容器内/etc/motd）
+pct exec $CTID -- sh -c "cat > /etc/motd <<'EOF'
  _       _       ____  
 | |     | |     |  _ \ 
 | |     | |     | |_) |
@@ -86,9 +86,11 @@ pct exec $CTID -- cat > /etc/motd << 'EOF'
 crontab中包含了定时三天删除/var/log下的journalctl syslog等日志文件
 您可以按需删除定时任务
 EOF
+"
 
-#添加定时清理日志
-pct exec $CTID -- (crontab -l 2>/dev/null; echo '0 0 */3 * * rm -rf /var/log/journal && rm -f /var/log/syslog /var/log/syslog.1 && mkdir -p /var/log/journal') | crontab -
+# 添加定时清理日志（在容器内设置crontab）
+pct exec $CTID -- sh -c "(crontab -l 2>/dev/null; echo '0 0 */3 * * rm -rf /var/log/journal && rm -f /var/log/syslog /var/log/syslog.1 && mkdir -p /var/log/journal') | crontab -"
+
 
 # 清理无用缓存
 pct exec $CTID -- rm -rf /var/cache/apk/*
