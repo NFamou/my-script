@@ -43,7 +43,7 @@ green "▶️ 启动容器并安装组件..."
 pct start $CTID
 sleep 3
 
-pct exec $CTID -- sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories
+# pct exec $CTID -- sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories
 pct exec $CTID -- apk update
 pct exec $CTID -- apk add openssh curl wget sudo nano zip bash
 
