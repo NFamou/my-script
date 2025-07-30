@@ -8,7 +8,7 @@ PASSWORD="changeme123"
 TEMPLATE_NAME="alpine-3.20-default_20240908_amd64.tar.xz"
 TEMPLATE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/$TEMPLATE_NAME"
 TEMPLATE_PATH="/var/lib/vz/template/cache/$TEMPLATE_NAME"
-OUTPUT_TEMPLATE="/var/lib/vz/template/cache/alpine-ssh-template.tar.gz"
+OUTPUT_TEMPLATE="/var/lib/vz/template/cache/alpine-3.20-ssh.tar.gz"
 
 BRIDGE="vmbr1"
 IP="172.16.1.100/24"
@@ -71,6 +71,24 @@ pct exec $CTID -- sh -c "grep -q '^PasswordAuthentication' /etc/ssh/sshd_config 
 pct exec $CTID -- ssh-keygen -A
 pct exec $CTID -- rc-service sshd start
 pct exec $CTID -- rc-service sshd status || red "❌ SSHD 启动失败"
+
+#添加自定义SSH欢迎界面
+cat > /etc/motd << 'EOF'
+ _       _       ____  
+| |     | |     |  _ \ 
+| |     | |     | |_) |
+| |     | |     |  __/ 
+| |____ | |____ | |    
+|______||______||_|    
+
+欢迎使用 Alpine 3.20 LLP 特别版
+---------------------------------
+crontab中包含了定时三天删除/var/log下的journalctl syslog等日志文件
+您可以按需删除定时任务
+EOF
+
+#添加定时清理日志
+(crontab -l 2>/dev/null; echo '0 0 */3 * * rm -rf /var/log/journal && rm -f /var/log/syslog /var/log/syslog.1 && mkdir -p /var/log/journal') | crontab -
 
 # 清理无用缓存
 pct exec $CTID -- rm -rf /var/cache/apk/*
