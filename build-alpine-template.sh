@@ -73,7 +73,7 @@ pct exec $CTID -- rc-service sshd start
 pct exec $CTID -- rc-service sshd status || red "❌ SSHD 启动失败"
 
 #添加自定义SSH欢迎界面
-cat > /etc/motd << 'EOF'
+pct exec $CTID -- cat > /etc/motd << 'EOF'
  _       _       ____  
 | |     | |     |  _ \ 
 | |     | |     | |_) |
@@ -88,7 +88,7 @@ crontab中包含了定时三天删除/var/log下的journalctl syslog等日志文
 EOF
 
 #添加定时清理日志
-(crontab -l 2>/dev/null; echo '0 0 */3 * * rm -rf /var/log/journal && rm -f /var/log/syslog /var/log/syslog.1 && mkdir -p /var/log/journal') | crontab -
+pct exec $CTID -- (crontab -l 2>/dev/null; echo '0 0 */3 * * rm -rf /var/log/journal && rm -f /var/log/syslog /var/log/syslog.1 && mkdir -p /var/log/journal') | crontab -
 
 # 清理无用缓存
 pct exec $CTID -- rm -rf /var/cache/apk/*
