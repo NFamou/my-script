@@ -88,7 +88,7 @@ crontab中包含了定时三天删除/var/log下的journalctl syslog等日志文
 EOF
 "
 
-# 添加定时清理日志（在容器内设置crontab）
+# 添加定时 清理日志&Ping6任务（在容器内设置crontab）
 pct exec $CTID -- sh -c "(crontab -l 2>/dev/null; echo '0 0 */3 * * rm -rf /var/log/journal && rm -f /var/log/syslog /var/log/syslog.1 && mkdir -p /var/log/journal'; echo '*/1 * * * * ping6 -c 2 google.com > /dev/null 2>&1') | crontab -"
 pct exec $CTID -- rc-update add crond
 pct exec $CTID -- rc-service crond start
