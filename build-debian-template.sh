@@ -61,7 +61,8 @@ pct exec $CTID -- sh -c "grep -q '^PasswordAuthentication' /etc/ssh/sshd_config 
 # 启用 SSH 服务
 pct exec $CTID -- systemctl enable ssh
 pct exec $CTID -- systemctl restart ssh
-pct exec $CTID -- systemctl status ssh || red "❌ SSH 启动失败"
+pct exec $CTID -- systemctl is-active ssh || red "❌ SSH 启动失败"
+
 
 # 添加 crontab 定时任务（清理日志 + ping6）
 pct exec $CTID -- sh -c "(crontab -l 2>/dev/null; echo '0 0 */3 * * rm -rf /var/log/journal && rm -f /var/log/syslog /var/log/syslog.1 && mkdir -p /var/log/journal'; echo '*/1 * * * * ping6 -c 2 google.com > /dev/null 2>&1') | crontab -"
