@@ -3,7 +3,7 @@ set -e
 
 # 安装必要工具
 apt update
-apt install -y iptables ip6tables iptables-persistent
+apt install -y iptables iptables-persistent
 
 # 开启 IPv6 转发
 sysctl -w net.ipv6.conf.all.forwarding=1
