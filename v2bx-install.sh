@@ -136,7 +136,7 @@ install_V2bX() {
     mkdir -p /usr/local/V2bX/
     cd /usr/local/V2bX/
 
-    local proxy_prefix="https://ghproxy.nuwaa.rest/download?url="
+    local proxy_prefix="https://gh-proxy.com/"
 
     if [ $# == 0 ]; then
         get_latest_version
