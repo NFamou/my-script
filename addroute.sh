@@ -1,35 +1,43 @@
 #!/bin/bash
-CONFIG_FILE="/etc/V2bX/route.json"
-TMP_FILE="/tmp/route.tmp"
+# 一键添加 socks5-warp 路由规则到 /etc/V2bX/route.json
 
-# 安装 jq（Debian/Ubuntu 或 RHEL/CentOS）
-if ! command -v jq >/dev/null 2>&1; then
-    echo "⚠️ jq 未安装，正在安装..."
-    if command -v apt-get >/dev/null 2>&1; then
-        sudo apt-get update && sudo apt-get install -y jq
-    elif command -v yum >/dev/null 2>&1; then
-        sudo yum install -y jq
-    else
-        echo "❌ 请手动安装 jq"
-        exit 1
-    fi
+CONFIG_FILE="/etc/V2bX/route.json"
+TMP_FILE="/etc/V2bX/route.tmp"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+  echo "❌ 未找到配置文件: $CONFIG_FILE"
+  exit 1
 fi
 
-[ ! -f "$CONFIG_FILE" ] && echo "❌ $CONFIG_FILE 不存在" && exit 1
+read -p "请输入 shadowsocks 编号: " SS_PORT
+INBOUND_TAG="[https://node-api114514.6868319.xyz]-shadowsocks:${SS_PORT}"
 
-read -p "请输入 shadowsocks 编号: " P
-T="[https://node-api114514.6868319.xyz]-shadowsocks:$P"
+# 检查是否已存在相同 inboundTag，防止重复添加
+if jq -e --arg tag "$INBOUND_TAG" '.rules[]? | select(.inboundTag[]? == $tag)' "$CONFIG_FILE" >/dev/null 2>&1; then
+  echo "⚠️  已存在 inboundTag: $INBOUND_TAG，无需重复添加。"
+  exit 0
+fi
 
-# 防重复
-jq -e --arg t "$T" '.[1][]? | select(type=="object" and .inboundTag[]? == $t)' "$CONFIG_FILE" >/dev/null 2>&1 \
-  && echo "⚠️ 已存在 $T" && exit 0
+jq --arg ssid "$INBOUND_TAG" '
+  .rules |= (. // []) |
+  .rules |= map(
+    if .outboundTag == "IPv4_out" then
+      {"type": "field",
+       "outboundTag": "socks5-warp",
+       "inboundTag": [$ssid],
+       "network": "udp,tcp"},
+      .
+    else
+      .
+    end
+  )
+' "$CONFIG_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$CONFIG_FILE"
 
-# 找 IPv4_out 索引
-IDX=$(jq '[.[1][] | type=="object" and .outboundTag=="IPv4_out"] | index(true)' "$CONFIG_FILE")
+if [ $? -eq 0 ]; then
+  echo "✅ 已成功插入 socks5-warp 规则："
+  echo "   inboundTag = $INBOUND_TAG"
+else
+  echo "❌ 插入失败，请检查 jq 是否安装或 JSON 格式是否正确。"
+fi
 
-# 插入新规则在 IPv4_out 前
-jq --arg s "$T" --argjson idx "$IDX" '
-  .[1] |= (.[0:$idx] + [{"type":"field","outboundTag":"socks5-warp","inboundTag":[$s],"network":"udp,tcp"}] + .[$idx:])
-' "$CONFIG_FILE" | jq '.' > "$TMP_FILE" && mv "$TMP_FILE" "$CONFIG_FILE"
-
-echo "✅ 已插入 $T"
+echo "✅ 命令已安装完成。现在可直接执行： addroute"
