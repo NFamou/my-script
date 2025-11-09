@@ -1,10 +1,8 @@
 #!/bin/bash
-# 一键添加 socks5-warp 路由规则到 /etc/V2bX/route.json，并自动安装 jq
-
 CONFIG_FILE="/etc/V2bX/route.json"
 TMP_FILE="/tmp/route.tmp"
 
-# 检查 jq 是否存在
+# 自动安装 jq
 if ! command -v jq >/dev/null 2>&1; then
     echo "⚠️ jq 未安装，正在安装..."
     if command -v apt-get >/dev/null 2>&1; then
@@ -12,7 +10,7 @@ if ! command -v jq >/dev/null 2>&1; then
     elif command -v yum >/dev/null 2>&1; then
         sudo yum install -y jq
     else
-        echo "❌ 未检测到 apt-get 或 yum，请手动安装 jq"
+        echo "❌ 请手动安装 jq"
         exit 1
     fi
 fi
@@ -22,12 +20,11 @@ fi
 read -p "请输入 shadowsocks 编号: " P
 T="[https://node-api114514.6868319.xyz]-shadowsocks:$P"
 
-# 检查是否重复
-jq -e --arg t "$T" '.rules[]? | select(type=="object" and .inboundTag[]? == $t)' "$CONFIG_FILE" >/dev/null 2>&1 \
+# 防重复
+jq -e --arg t "$T" '.[1][]? | select(.inboundTag[]? == $t)' "$CONFIG_FILE" >/dev/null 2>&1 \
   && echo "⚠️ 已存在 $T" && exit 0
 
-# 插入规则并格式化
-jq --arg s "$T" '.rules|=(.//[])|map(if type=="object" and .outboundTag=="IPv4_out" then {"type":"field","outboundTag":"socks5-warp","inboundTag":[$s],"network":"udp,tcp"} else . end)' "$CONFIG_FILE" \
-  | jq '.' > "$TMP_FILE" && mv "$TMP_FILE" "$CONFIG_FILE"
+# 插入新规则到第二个数组末尾，并美化 JSON
+jq --arg s "$T" '.[1] |= ( . + [ {"type":"field","outboundTag":"socks5-warp","inboundTag":[$s],"network":"udp,tcp"} ] ) | .' "$CONFIG_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$CONFIG_FILE"
 
 echo "✅ 已插入 $T"
