@@ -24,8 +24,12 @@ T="[https://node-api114514.6868319.xyz]-shadowsocks:$P"
 jq -e --arg t "$T" '.[1][]? | select(.inboundTag[]? == $t)' "$CONFIG_FILE" >/dev/null 2>&1 \
   && echo "⚠️ 已存在 $T" && exit 0
 
-# 插入规则到 IPv4_out 前
-jq --arg s "$T" '.[1] |= ( reduce .[] as $r ([]; if $r.outboundTag=="IPv4_out" then . + [{"type":"field","outboundTag":"socks5-warp","inboundTag":[$s],"network":"udp,tcp"}, $r] else . + [$r] end) ) | .' "$CONFIG_FILE" \
-    > "$TMP_FILE" && mv "$TMP_FILE" "$CONFIG_FILE"
+# 找 IPv4_out 索引
+IDX=$(jq '[.[1][]?.outboundTag=="IPv4_out"] | index(true)' "$CONFIG_FILE")
+
+# 插入新规则在 IPv4_out 前
+jq --arg s "$T" --argjson idx "$IDX" '
+  .[1] |= (.[0:$idx] + [{"type":"field","outboundTag":"socks5-warp","inboundTag":[$s],"network":"udp,tcp"}] + .[$idx:])
+' "$CONFIG_FILE" | jq '.' > "$TMP_FILE" && mv "$TMP_FILE" "$CONFIG_FILE"
 
 echo "✅ 已插入 $T"
