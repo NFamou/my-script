@@ -2,9 +2,7 @@
 
 # 一键安装 Warp WireGuard + Socks5 (WireProxy)
 
-# 支持 Debian/Ubuntu 系统
-
-# 自动修复 hosts/backports 问题，apt 安装不会因 404 中断
+# 支持 Debian/Ubuntu 系统，修复 hosts/backports，并安全读取私钥
 
 set -e
 
@@ -14,9 +12,9 @@ if ! grep -q "$HOSTNAME" /etc/hosts; then
 echo "127.0.1.1   $HOSTNAME" | sudo tee -a /etc/hosts
 fi
 
-echo "=== 临时屏蔽失效的 backports 源 ==="
+echo "=== 删除失效的 bullseye-backports 源 ==="
 if [ -f /etc/apt/sources.list ]; then
-sudo mv /etc/apt/sources.list /etc/apt/sources.list.bak
+sudo cp /etc/apt/sources.list /etc/apt/sources.list.bak
 grep -v 'bullseye-backports' /etc/apt/sources.list.bak | sudo tee /etc/apt/sources.list
 fi
 
@@ -42,8 +40,13 @@ wgcf generate || true
 # 移动配置文件
 
 sudo mkdir -p /etc/wireguard
+if [ -f wgcf-profile.conf ]; then
 sudo mv wgcf-profile.conf /etc/wireguard/wg0.conf
 sudo chmod 600 /etc/wireguard/wg0.conf
+else
+echo "wgcf-profile.conf 不存在，安装中断"
+exit 1
+fi
 
 # 安装 WireProxy
 
@@ -52,10 +55,12 @@ curl -LO [https://github.com/octeep/wireproxy/releases/latest/download/wireproxy
 chmod +x wireproxy-linux-amd64
 sudo mv wireproxy-linux-amd64 /usr/local/bin/wireproxy
 
-# 自动读取 wg0.conf 的私钥和公钥生成 proxy.conf
+# 安全读取 wg0.conf 私钥
 
 WG_PRIVATE=$(grep PrivateKey /etc/wireguard/wg0.conf | awk '{print $3}')
 WG_PUBLIC=$(sudo wg show wg0 public-key 2>/dev/null || echo "PLACEHOLDER_PUBLIC_KEY")
+
+# 生成 proxy.conf
 
 sudo tee /etc/wireguard/proxy.conf >/dev/null <<EOF
 [Interface]
@@ -72,7 +77,7 @@ Endpoint = [2606:4700:d0::a29f:c001]:4500
 BindAddress = 127.0.0.1:40000
 EOF
 
-# 配置并启动 systemd 服务
+# 配置 systemd 服务
 
 sudo systemctl stop wireproxy.service 2>/dev/null || true
 sudo tee /etc/systemd/system/wireproxy.service >/dev/null <<'EOF'
