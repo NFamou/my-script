@@ -3,41 +3,6 @@
 # 支持 Shadowsocks / Trojan / VLESS
 # 自动检测 /etc/V2bX/custom_outbound.json 是否存在 socks5-warp 出口
 
-#安装jq
-# ===============================
-# 检测并安装 jq
-# ===============================
-if ! command -v jq >/dev/null 2>&1; then
-  echo "⚠️ 未检测到 jq，正在尝试安装..."
-
-  if [ -f /etc/debian_version ]; then
-    # Debian / Ubuntu
-    apt update
-    apt install -y jq
-
-  elif [ -f /etc/redhat-release ]; then
-    # AlmaLinux / Rocky / CentOS
-    if command -v dnf >/dev/null 2>&1; then
-      dnf install -y jq
-    else
-      yum install -y jq
-    fi
-
-  else
-    echo "❌ 无法识别的 Linux 发行版，请手动安装 jq"
-    exit 1
-  fi
-fi
-
-# 最终确认
-if ! command -v jq >/dev/null 2>&1; then
-  echo "❌ jq 安装失败，请手动处理"
-  exit 1
-fi
-
-echo "✅ jq 已就绪"
-
-
 set -e
 
 CONFIG_FILE="/etc/V2bX/route.json"
@@ -46,7 +11,41 @@ TMP_FILE="/tmp/v2bx.tmp"
 API_PREFIX="[https://node-api114514.6868319.xyz]"
 
 # ===============================
-# 1️⃣ 检查 route.json
+# 0️⃣ 检测是否 root
+# ===============================
+if [ "$EUID" -ne 0 ]; then
+  echo "❌ 请使用 root 用户运行该脚本"
+  exit 1
+fi
+
+# ===============================
+# 1️⃣ 检测并安装 jq
+# ===============================
+if ! command -v jq >/dev/null 2>&1; then
+  echo "⚠️ 未检测到 jq，正在尝试安装..."
+  if [ -f /etc/debian_version ]; then
+    apt update
+    apt install -y jq
+  elif [ -f /etc/redhat-release ]; then
+    if command -v dnf >/dev/null 2>&1; then
+      dnf install -y jq
+    else
+      yum install -y jq
+    fi
+  else
+    echo "❌ 无法识别的 Linux 发行版，请手动安装 jq"
+    exit 1
+  fi
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "❌ jq 安装失败，请手动处理"
+  exit 1
+fi
+echo "✅ jq 已就绪"
+
+# ===============================
+# 2️⃣ 检查 route.json
 # ===============================
 if [ ! -f "$CONFIG_FILE" ]; then
   echo "❌ 未找到配置文件: $CONFIG_FILE"
@@ -54,42 +53,66 @@ if [ ! -f "$CONFIG_FILE" ]; then
 fi
 
 # ===============================
-# 2️⃣ 检查 / 创建 socks5-warp outbound
+# 3️⃣ 检查 / 创建 socks5-warp outbound
 # ===============================
 echo "🔍 检查 socks5-warp outbound..."
-
-# 若文件不存在，创建基础结构
 if [ ! -f "$OUTBOUND_FILE" ]; then
   echo "⚠️ 未找到 $OUTBOUND_FILE，正在创建..."
   echo '{"outbounds":[]}' > "$OUTBOUND_FILE"
 fi
 
 # 检测是否已存在 socks5-warp
-if jq -e '.outbounds[]? | select(.tag=="socks5-warp")' "$OUTBOUND_FILE" >/dev/null 2>&1; then
+if jq -e '.[]? | select(.tag=="socks5-warp")' "$OUTBOUND_FILE" >/dev/null 2>&1 \
+   || jq -e '.outbounds[]? | select(.tag=="socks5-warp")' "$OUTBOUND_FILE" >/dev/null 2>&1; then
   echo "✅ socks5-warp outbound 已存在，保持不变。"
 else
-  echo "➕ 添加 socks5-warp outbound..."
-  jq '
-    .outbounds |= (. // []) + [
-      {
-        "tag": "socks5-warp",
-        "protocol": "socks",
-        "settings": {
-          "servers": [
-            {
-              "address": "127.0.0.1",
-              "port": 40000
-            }
-          ]
+  TOP_TYPE=$(jq -r 'type' "$OUTBOUND_FILE")
+  if [ "$TOP_TYPE" = "array" ]; then
+    # 顶层是数组
+    jq '
+      . += [
+        {
+          "tag": "socks5-warp",
+          "protocol": "socks",
+          "settings": {
+            "servers": [
+              {
+                "address": "127.0.0.1",
+                "port": 40000
+              }
+            ]
+          }
         }
-      }
-    ]
-  ' "$OUTBOUND_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$OUTBOUND_FILE"
-  echo "✅ socks5-warp outbound 已添加。"
+      ]
+    ' "$OUTBOUND_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$OUTBOUND_FILE"
+    echo "✅ socks5-warp outbound 已添加（数组模式）。"
+  elif [ "$TOP_TYPE" = "object" ]; then
+    # 顶层是对象
+    jq '
+      .outbounds |= (. // []) + [
+        {
+          "tag": "socks5-warp",
+          "protocol": "socks",
+          "settings": {
+            "servers": [
+              {
+                "address": "127.0.0.1",
+                "port": 40000
+              }
+            ]
+          }
+        }
+      ]
+    ' "$OUTBOUND_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$OUTBOUND_FILE"
+    echo "✅ socks5-warp outbound 已添加（对象模式）。"
+  else
+    echo "❌ 无法识别的 JSON 结构，请检查 $OUTBOUND_FILE"
+    exit 1
+  fi
 fi
 
 # ===============================
-# 3️⃣ 选择入站类型
+# 4️⃣ 选择入站类型
 # ===============================
 echo
 echo "请选择入站类型："
@@ -118,17 +141,15 @@ case "$TYPE_CHOICE" in
 esac
 
 # ===============================
-# 4️⃣ 检查 route 规则是否已存在
+# 5️⃣ 检查 route 规则是否已存在
 # ===============================
-if jq -e --arg tag "$INBOUND_TAG" '
-  .rules[]? | select(.inboundTag[]? == $tag)
-' "$CONFIG_FILE" >/dev/null 2>&1; then
+if jq -e --arg tag "$INBOUND_TAG" '.rules[]? | select(.inboundTag[]? == $tag)' "$CONFIG_FILE" >/dev/null 2>&1; then
   echo "⚠️ 已存在 inboundTag: $INBOUND_TAG，无需重复添加。"
   exit 0
 fi
 
 # ===============================
-# 5️⃣ 插入路由规则
+# 6️⃣ 插入路由规则
 # ===============================
 jq --arg tag "$INBOUND_TAG" '
   .rules |= (. // []) |
@@ -162,10 +183,9 @@ jq --arg tag "$INBOUND_TAG" '
 
 echo "✅ 已成功插入 socks5-warp 路由规则"
 echo "   inboundTag = $INBOUND_TAG"
-echo "🎉 全部操作完成"
 
 # ===============================
-# 6️⃣ 是否重启 V2bX 服务
+# 7️⃣ 提示是否重启 V2bX
 # ===============================
 read -p "是否需要立即重启 V2bX 服务以生效路由规则? (y/n): " RESTART_CHOICE
 case "$RESTART_CHOICE" in
@@ -189,3 +209,5 @@ case "$RESTART_CHOICE" in
     echo "⚠️ 输入无效，跳过重启操作"
     ;;
 esac
+
+echo "🎉 全部操作完成"
