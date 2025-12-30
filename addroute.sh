@@ -3,6 +3,41 @@
 # 支持 Shadowsocks / Trojan / VLESS
 # 自动检测 /etc/V2bX/custom_outbound.json 是否存在 socks5-warp 出口
 
+#安装jq
+# ===============================
+# 检测并安装 jq
+# ===============================
+if ! command -v jq >/dev/null 2>&1; then
+  echo "⚠️ 未检测到 jq，正在尝试安装..."
+
+  if [ -f /etc/debian_version ]; then
+    # Debian / Ubuntu
+    apt update
+    apt install -y jq
+
+  elif [ -f /etc/redhat-release ]; then
+    # AlmaLinux / Rocky / CentOS
+    if command -v dnf >/dev/null 2>&1; then
+      dnf install -y jq
+    else
+      yum install -y jq
+    fi
+
+  else
+    echo "❌ 无法识别的 Linux 发行版，请手动安装 jq"
+    exit 1
+  fi
+fi
+
+# 最终确认
+if ! command -v jq >/dev/null 2>&1; then
+  echo "❌ jq 安装失败，请手动处理"
+  exit 1
+fi
+
+echo "✅ jq 已就绪"
+
+
 set -e
 
 CONFIG_FILE="/etc/V2bX/route.json"
@@ -128,3 +163,29 @@ jq --arg tag "$INBOUND_TAG" '
 echo "✅ 已成功插入 socks5-warp 路由规则"
 echo "   inboundTag = $INBOUND_TAG"
 echo "🎉 全部操作完成"
+
+# ===============================
+# 6️⃣ 是否重启 V2bX 服务
+# ===============================
+read -p "是否需要立即重启 V2bX 服务以生效路由规则? (y/n): " RESTART_CHOICE
+case "$RESTART_CHOICE" in
+  y|Y)
+    if command -v systemctl >/dev/null 2>&1; then
+      echo "🔄 正在重启 V2bX 服务..."
+      systemctl restart V2bX
+      if [ $? -eq 0 ]; then
+        echo "✅ V2bX 服务已成功重启"
+      else
+        echo "❌ V2bX 重启失败，请手动检查"
+      fi
+    else
+      echo "❌ systemctl 未找到，请手动重启 V2bX"
+    fi
+    ;;
+  n|N)
+    echo "⚠️ 路由已更新，但 V2bX 未重启，需要手动重启后生效"
+    ;;
+  *)
+    echo "⚠️ 输入无效，跳过重启操作"
+    ;;
+esac
