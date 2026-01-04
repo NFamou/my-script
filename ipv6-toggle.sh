@@ -1,0 +1,103 @@
+#!/bin/bash
+
+set -e
+
+if [ "$EUID" -ne 0 ]; then
+  echo "❌ 请使用 root 运行"
+  exit 1
+fi
+
+CONF_FILE="/etc/sysctl.d/99-disable-ipv6.conf"
+
+get_interfaces() {
+  ip -o link show | awk -F': ' '{print $2}' | grep -v '^lo$'
+}
+
+apply_sysctl() {
+  sysctl --system >/dev/null
+}
+
+echo "=============================="
+echo " IPv6 网口管理脚本"
+echo "=============================="
+echo "1) 永久关闭指定网口 IPv6"
+echo "2) 恢复指定网口 IPv6"
+echo "3) 查看当前 IPv6 状态"
+echo "0) 退出"
+echo
+read -rp "请选择操作 [0-3]: " ACTION
+
+case "$ACTION" in
+  1)
+    echo
+    echo "可用网口："
+    mapfile -t IFACES < <(get_interfaces)
+
+    for i in "${!IFACES[@]}"; do
+      echo "$((i+1))) ${IFACES[$i]}"
+    done
+
+    echo
+    read -rp "选择要关闭 IPv6 的网口编号: " IDX
+    IFACE="${IFACES[$((IDX-1))]}"
+
+    if [ -z "$IFACE" ]; then
+      echo "❌ 无效选择"
+      exit 1
+    fi
+
+    echo "[+] 永久关闭 $IFACE 的 IPv6"
+
+    # 移除旧配置
+    sed -i "/net.ipv6.conf.$IFACE/d" "$CONF_FILE" 2>/dev/null || true
+
+    cat >> "$CONF_FILE" <<EOF
+net.ipv6.conf.$IFACE.disable_ipv6 = 1
+EOF
+
+    apply_sysctl
+    echo "✅ $IFACE IPv6 已永久关闭"
+    ;;
+
+  2)
+    echo
+    echo "可恢复的网口："
+    IFACES=$(grep -oP 'net.ipv6.conf.\K[^.]+' "$CONF_FILE" 2>/dev/null | sort -u)
+
+    if [ -z "$IFACES" ]; then
+      echo "⚠️ 没有发现已关闭 IPv6 的网口"
+      exit 0
+    fi
+
+    select IFACE in $IFACES; do
+      [ -n "$IFACE" ] && break
+    done
+
+    echo "[+] 恢复 $IFACE 的 IPv6"
+    sed -i "/net.ipv6.conf.$IFACE.disable_ipv6/d" "$CONF_FILE"
+    apply_sysctl
+    echo "✅ $IFACE IPv6 已恢复（重启网络或系统后完全生效）"
+    ;;
+
+  3)
+    echo
+    echo "当前 IPv6 状态："
+    for IFACE in $(get_interfaces); do
+      STATUS=$(cat /proc/sys/net/ipv6/conf/$IFACE/disable_ipv6 2>/dev/null || echo "?")
+      if [ "$STATUS" = "1" ]; then
+        echo "❌ $IFACE : IPv6 已关闭"
+      else
+        echo "✅ $IFACE : IPv6 启用"
+      fi
+    done
+    ;;
+
+  0)
+    exit 0
+    ;;
+
+  *)
+    echo "❌ 无效选项"
+    exit 1
+    ;;
+esac
