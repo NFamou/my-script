@@ -4,11 +4,20 @@ set -e
 
 [ "$EUID" -ne 0 ] && { echo "❌ 请使用 root 运行"; exit 1; }
 
-CONF_FILE="/etc/sysctl.d/99-disable-ipv6.conf"
+CONF_SYSCTL="/etc/sysctl.conf"
+CONF_DIR="/etc/sysctl.d"
 
-get_interfaces() {
-  ip -o link show | awk -F': ' '{print $2}' \
-    | grep -Ev '^(lo|sit|he-|ip6tnl)'
+# ---------------- 基础函数 ----------------
+
+is_real_iface() {
+  [[ ! "$1" =~ ^(lo|sit|he-|ip6tnl) ]]
+}
+
+get_real_ifaces() {
+  for d in /proc/sys/net/ipv6/conf/*; do
+    IF=$(basename "$d")
+    is_real_iface "$IF" && echo "$IF"
+  done
 }
 
 get_ipv4() {
@@ -19,65 +28,161 @@ get_ipv6() {
   ip -o -6 addr show "$1" scope global 2>/dev/null | awk '{print $4}' | paste -sd ","
 }
 
+sysctl_val() {
+  cat "/proc/sys/net/ipv6/conf/$1/disable_ipv6" 2>/dev/null || echo "?"
+}
+
 apply_sysctl() {
   sysctl --system >/dev/null
 }
 
+default_iface() {
+  ip route | awk '/default/ {print $5; exit}'
+}
+
+remove_all_disable_rules() {
+  sed -i '/net.ipv6.conf.*.disable_ipv6/d' "$CONF_SYSCTL" 2>/dev/null || true
+  sed -i '/net.ipv6.conf.*.disable_ipv6/d' "$CONF_DIR"/*.conf 2>/dev/null || true
+}
+
+# ---------------- 菜单 ----------------
+
 echo "=============================="
-echo " IPv6 网口管理脚本"
+echo " IPv6 网口管理 · 终极安全版"
 echo "=============================="
-echo "1) 永久关闭指定网口 IPv6"
-echo "2) 恢复指定网口 IPv6"
-echo "3) 查看当前 IPv6 状态"
+echo "1) 查看 IPv6 状态（含关闭来源）"
+echo "2) 永久关闭 IPv6（all / default / 指定网口）"
+echo "3) 精确恢复 IPv6（按来源恢复）"
 echo "0) 退出"
 echo
 read -rp "请选择操作 [0-3]: " ACTION
 
-case "$ACTION" in
-1)
-  echo
-  echo "可用网口（含 IP 信息）："
-  mapfile -t IFACES < <(get_interfaces)
+# ---------------- 1 查看状态 ----------------
 
-  for i in "${!IFACES[@]}"; do
-    IF="${IFACES[$i]}"
+if [ "$ACTION" = "1" ]; then
+  echo
+  ALL=$(sysctl_val all)
+  DEF=$(sysctl_val default)
+
+  echo "全局状态："
+  echo "  all.disable_ipv6     = $ALL"
+  echo "  default.disable_ipv6 = $DEF"
+  echo
+
+  MAIN_IF=$(default_iface)
+
+  for IF in $(get_real_ifaces); do
+    VAL=$(sysctl_val "$IF")
     IPV4=$(get_ipv4 "$IF")
     IPV6=$(get_ipv6 "$IF")
 
-    echo "$((i+1))) $IF"
-    echo "   IPv4: ${IPV4:-无}"
-    echo "   IPv6: ${IPV6:-无}"
+    SOURCE="iface"
+    [ "$ALL" = "1" ] && SOURCE="all"
+    [ "$ALL" = "0" ] && [ "$DEF" = "1" ] && SOURCE="default"
+
+    echo "[$IF]"
+    echo "  IPv4   : ${IPV4:-无}"
+    echo "  IPv6   : ${IPV6:-无}"
+    echo "  状态   : $([ "$VAL" = "1" ] && echo '❌ 已关闭' || echo '✅ 启用')"
+    echo "  来源   : $SOURCE"
+    [ "$IF" = "$MAIN_IF" ] && echo "  ⚠️ 主路由网口"
+    echo
   done
+  exit 0
+fi
 
+# ---------------- 2 关闭 IPv6 ----------------
+
+if [ "$ACTION" = "2" ]; then
   echo
-  read -rp "选择要关闭 IPv6 的网口编号: " IDX
-  IFACE="${IFACES[$((IDX-1))]}"
+  echo "请选择关闭级别："
+  echo "1) all（所有网口，最危险）"
+  echo "2) default（新网口默认关闭）"
+  echo "3) 指定网口（推荐）"
+  echo
+  read -rp "选择 [1-3]: " LEVEL
 
-  [ -z "$IFACE" ] && { echo "❌ 无效选择"; exit 1; }
+  MAIN_IF=$(default_iface)
 
-  echo "[+] 永久关闭 $IFACE 的 IPv6"
+  case "$LEVEL" in
+    1)
+      echo "⚠️ 警告：这会关闭所有 IPv6"
+      read -rp "确认输入 YES: " C
+      [ "$C" != "YES" ] && exit 1
+      remove_all_disable_rules
+      echo "net.ipv6.conf.all.disable_ipv6 = 1" >> "$CONF_DIR/99-ipv6.conf"
+      ;;
+    2)
+      remove_all_disable_rules
+      echo "net.ipv6.conf.default.disable_ipv6 = 1" >> "$CONF_DIR/99-ipv6.conf"
+      ;;
+    3)
+      echo
+      mapfile -t IFACES < <(get_real_ifaces)
+      for i in "${!IFACES[@]}"; do
+        IF="${IFACES[$i]}"
+        echo "$((i+1))) $IF  IPv4:${get_ipv4 "$IF"}  IPv6:${get_ipv6 "$IF"}"
+      done
+      echo
+      read -rp "选择网口编号: " IDX
+      IFACE="${IFACES[$((IDX-1))]}"
 
-  sed -i "/net.ipv6.conf.$IFACE/d" "$CONF_FILE" 2>/dev/null || true
-  echo "net.ipv6.conf.$IFACE.disable_ipv6 = 1" >> "$CONF_FILE"
+      [ -z "$IFACE" ] && exit 1
+
+      if [ "$IFACE" = "$MAIN_IF" ]; then
+        echo "❌ 拒绝：这是主路由网口，禁止操作"
+        exit 1
+      fi
+
+      sed -i "/net.ipv6.conf.$IFACE.disable_ipv6/d" "$CONF_DIR"/*.conf 2>/dev/null || true
+      echo "net.ipv6.conf.$IFACE.disable_ipv6 = 1" >> "$CONF_DIR/99-ipv6.conf"
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
 
   apply_sysctl
-  echo "✅ $IFACE IPv6 已永久关闭"
-  ;;
+  echo "✅ IPv6 关闭完成"
+  exit 0
+fi
 
-2)
+# ---------------- 3 恢复 IPv6 ----------------
+
+if [ "$ACTION" = "3" ]; then
   echo
-  echo "检测当前 IPv6 已关闭的网口："
+  echo "检测 IPv6 关闭来源..."
+
+  ALL=$(sysctl_val all)
+  DEF=$(sysctl_val default)
+
+  if [ "$ALL" = "1" ]; then
+    echo "发现：all.disable_ipv6 = 1"
+    read -rp "是否恢复？[y/N]: " C
+    [ "$C" = "y" ] || exit 0
+    remove_all_disable_rules
+    sysctl -w net.ipv6.conf.all.disable_ipv6=0
+  fi
+
+  if [ "$DEF" = "1" ]; then
+    echo "发现：default.disable_ipv6 = 1"
+    read -rp "是否恢复？[y/N]: " C
+    [ "$C" = "y" ] || exit 0
+    remove_all_disable_rules
+    sysctl -w net.ipv6.conf.default.disable_ipv6=0
+  fi
+
+  echo
+  echo "检测独立关闭的网口："
 
   mapfile -t IFACES < <(
-    for d in /proc/sys/net/ipv6/conf/*; do
-      IF=$(basename "$d")
-      [[ "$IF" =~ ^(lo|sit|he-|ip6tnl) ]] && continue
-      [ "$(cat "$d/disable_ipv6")" = "1" ] && echo "$IF"
+    for IF in $(get_real_ifaces); do
+      [ "$(sysctl_val "$IF")" = "1" ] && echo "$IF"
     done
   )
 
   if [ "${#IFACES[@]}" -eq 0 ]; then
-    echo "⚠️ 当前没有检测到被关闭 IPv6 的真实网口"
+    echo "⚠️ 没有独立关闭的网口"
     exit 0
   fi
 
@@ -85,39 +190,10 @@ case "$ACTION" in
     [ -n "$IFACE" ] && break
   done
 
-  echo "[+] 恢复 $IFACE 的 IPv6"
+  sed -i "/net.ipv6.conf.$IFACE.disable_ipv6/d" "$CONF_SYSCTL" 2>/dev/null
+  sed -i "/net.ipv6.conf.$IFACE.disable_ipv6/d" "$CONF_DIR"/*.conf 2>/dev/null
 
-  # 删除所有 sysctl 中对该网口的 disable 规则
-  sed -i "/net.ipv6.conf.$IFACE.disable_ipv6/d" /etc/sysctl.conf 2>/dev/null || true
-  sed -i "/net.ipv6.conf.$IFACE.disable_ipv6/d" /etc/sysctl.d/*.conf 2>/dev/null || true
-
-  # 立刻恢复
   sysctl -w net.ipv6.conf.$IFACE.disable_ipv6=0 >/dev/null
-
-  echo "✅ $IFACE IPv6 已恢复（建议重启网络或系统）"
-  ;;
-
-3)
-  echo
-  echo "当前 IPv6 状态："
-  for IFACE in $(get_interfaces); do
-    STATUS=$(cat /proc/sys/net/ipv6/conf/$IFACE/disable_ipv6 2>/dev/null || echo "?")
-    IPV6=$(get_ipv6 "$IFACE")
-
-    if [ "$STATUS" = "1" ]; then
-      echo "❌ $IFACE : IPv6 已关闭"
-    else
-      echo "✅ $IFACE : IPv6 启用 (${IPV6:-无 IPv6 地址})"
-    fi
-  done
-  ;;
-
-0)
+  echo "✅ $IFACE IPv6 已恢复"
   exit 0
-  ;;
-
-*)
-  echo "❌ 无效选项"
-  exit 1
-  ;;
-esac
+fi
