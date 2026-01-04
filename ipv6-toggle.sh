@@ -66,21 +66,35 @@ case "$ACTION" in
 
 2)
   echo
-  IFACES=$(grep -oP 'net.ipv6.conf.\K[^.]+' "$CONF_FILE" 2>/dev/null | sort -u)
+  echo "检测当前 IPv6 已关闭的网口："
 
-  if [ -z "$IFACES" ]; then
-    echo "⚠️ 没有已关闭 IPv6 的网口"
+  mapfile -t IFACES < <(
+    for d in /proc/sys/net/ipv6/conf/*; do
+      IF=$(basename "$d")
+      [[ "$IF" =~ ^(lo|sit|he-|ip6tnl) ]] && continue
+      [ "$(cat "$d/disable_ipv6")" = "1" ] && echo "$IF"
+    done
+  )
+
+  if [ "${#IFACES[@]}" -eq 0 ]; then
+    echo "⚠️ 当前没有检测到被关闭 IPv6 的真实网口"
     exit 0
   fi
 
-  echo "可恢复的网口："
-  select IFACE in $IFACES; do
+  select IFACE in "${IFACES[@]}"; do
     [ -n "$IFACE" ] && break
   done
 
-  sed -i "/net.ipv6.conf.$IFACE.disable_ipv6/d" "$CONF_FILE"
-  apply_sysctl
-  echo "✅ $IFACE IPv6 已恢复（重启网络后完全生效）"
+  echo "[+] 恢复 $IFACE 的 IPv6"
+
+  # 删除所有 sysctl 中对该网口的 disable 规则
+  sed -i "/net.ipv6.conf.$IFACE.disable_ipv6/d" /etc/sysctl.conf 2>/dev/null || true
+  sed -i "/net.ipv6.conf.$IFACE.disable_ipv6/d" /etc/sysctl.d/*.conf 2>/dev/null || true
+
+  # 立刻恢复
+  sysctl -w net.ipv6.conf.$IFACE.disable_ipv6=0 >/dev/null
+
+  echo "✅ $IFACE IPv6 已恢复（建议重启网络或系统）"
   ;;
 
 3)
