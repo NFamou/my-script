@@ -60,10 +60,10 @@ function modify_zram() {
     fi
 
     # 修改配置文件
-    if grep -q "^#*SIZE_MB=" $CONFIG_FILE; then
-        sed -i "s/^#*SIZE_MB=.*/SIZE_MB=$new_size/" $CONFIG_FILE
+    if grep -q "^#*SIZE=" $CONFIG_FILE; then
+        sed -i "s/^#*SIZE=.*/SIZE=$new_size/" $CONFIG_FILE
     else
-        echo "SIZE_MB=$new_size" >> $CONFIG_FILE
+        echo "SIZE=$new_size" >> $CONFIG_FILE
     fi
 
     echo "✅ zram 大小已修改为 ${new_size}MB"
