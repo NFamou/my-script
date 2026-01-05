@@ -1,66 +1,57 @@
 #!/bin/bash
-# 一键配置 systemd-zram-generator + swappiness
-# 只用 generator，兼容 Debian / Ubuntu
+# zram 管理脚本
+# 支持查看、修改、重启 zram
+# 适用于 Debian / Ubuntu
 
-set -e
+CONFIG_FILE="/etc/default/zramswap"
 
-# ====== 配置参数 ======
-ZRAM_SIZE_MB=1536        # zram 容量
-SWAP_PRIORITY=100        # zram swap 优先级
-COMPRESSION="zstd"       # 压缩算法
-SWAPPINESS=80            # vm.swappiness 推荐 80
-
-ZRAM_CONF="/etc/systemd/zram-generator.conf"
-
-# ====== 1. 停用/卸载 zram-tools ======
-if systemctl list-unit-files | grep -q zramswap; then
-    echo "[+] 停用 zramswap 服务..."
-    systemctl disable --now zramswap || true
+# 检查是否 root
+if [ "$EUID" -ne 0 ]; then
+  echo "❌ 请使用 root 用户运行"
+  exit 1
 fi
 
-if dpkg -l | grep -q zram-tools; then
-    echo "[+] 卸载 zram-tools..."
-    apt remove -y zram-tools
-fi
+# 查看当前 zram 状态
+function view_zram() {
+    echo "===== 当前 zram 状态 ====="
+    swapon --show
+    free -h | grep -i swap
+    grep -i ZRAM_SIZE_MB $CONFIG_FILE
+    echo "========================="
+}
 
-# ====== 2. 安装 systemd-zram-generator ======
-if ! dpkg -l | grep -q systemd-zram-generator; then
-    echo "[+] 安装 systemd-zram-generator..."
-    apt update
-    apt install -y systemd-zram-generator
-fi
+# 修改 zram 大小
+function modify_zram() {
+    read -p "请输入新的 zram 大小 (MB): " new_size
+    if ! [[ "$new_size" =~ ^[0-9]+$ ]]; then
+        echo "❌ 输入不合法"
+        return
+    fi
+    # 删除注释并修改
+    if grep -q "^#*ZRAM_SIZE_MB=" $CONFIG_FILE; then
+        sed -i "s/^#*ZRAM_SIZE_MB=.*/ZRAM_SIZE_MB=$new_size/" $CONFIG_FILE
+    else
+        echo "ZRAM_SIZE_MB=$new_size" >> $CONFIG_FILE
+    fi
+    echo "✅ zram 大小已修改为 ${new_size}MB"
+    echo "重启 zram 服务中..."
+    systemctl restart zramswap
+    echo "✅ zram 已重启"
+}
 
-# ====== 3. 写 generator 配置 ======
-echo "[+] 写入 generator 配置: $ZRAM_SIZE_MB MB"
-cat > "$ZRAM_CONF" <<EOF
-[zram0]
-zram-size = ${ZRAM_SIZE_MB}M
-swap-priority = ${SWAP_PRIORITY}
-compression-algorithm = ${COMPRESSION}
-EOF
-
-# ====== 4. 设置 swappiness ======
-echo "[+] 设置 vm.swappiness=${SWAPPINESS}"
-sysctl -w vm.swappiness=$SWAPPINESS >/dev/null
-echo "vm.swappiness=${SWAPPINESS}" > /etc/sysctl.d/99-swappiness.conf
-sysctl --system >/dev/null
-
-# ====== 5. 重建 zram ======
-echo "[+] 停用旧 zram 设备并重建..."
-swapoff /dev/zram0 2>/dev/null || true
-systemctl daemon-reexec
-systemctl restart systemd-zram-setup@zram0
-
-# ====== 6. 验证 ======
-echo
-echo "===== 虚拟内存状态 ====="
-swapon --show
-echo
-echo "===== 内存使用 ====="
-free -h
-echo
-echo "===== swappiness ====="
-cat /proc/sys/vm/swappiness
-
-echo
-echo "[✓] systemd-zram-generator 配置完成"
+# 菜单
+while true; do
+    echo "===== zram 管理脚本 ====="
+    echo "1) 查看 zram 状态"
+    echo "2) 修改 zram 大小"
+    echo "3) 重启 zram"
+    echo "0) 退出"
+    read -p "请选择操作 [0-3]: " choice
+    case "$choice" in
+        1) view_zram ;;
+        2) modify_zram ;;
+        3) systemctl restart zramswap && echo "✅ zram 已重启" ;;
+        0) exit 0 ;;
+        *) echo "❌ 无效选项" ;;
+    esac
+done
