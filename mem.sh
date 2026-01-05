@@ -18,13 +18,21 @@ install_zram() {
 }
 
 set_zram_size() {
-  read -rp "请输入 ZRAM 容量（MB，例如 1024）: " SIZE
+  read -rp "请输入 ZRAM 容量（MB，例如 1536）: " SIZE
   [[ "$SIZE" =~ ^[0-9]+$ ]] || { echo "❌ 必须是数字"; return; }
 
   [ -f "$ZRAM_CONF" ] || touch "$ZRAM_CONF"
 
-  echo "[+] 禁用 ZRAM_PERCENT（防止覆盖）"
+  echo "[+] 写入 ZRAM 配置（强制生效模式）"
+
+  # 强制使用固定大小模式
   sed -i 's/^ZRAM_PERCENT=.*/#ZRAM_PERCENT=/' "$ZRAM_CONF"
+
+  if grep -q '^ZRAM_DEVICES=' "$ZRAM_CONF"; then
+    sed -i 's/^ZRAM_DEVICES=.*/ZRAM_DEVICES=1/' "$ZRAM_CONF"
+  else
+    echo "ZRAM_DEVICES=1" >> "$ZRAM_CONF"
+  fi
 
   if grep -q '^ZRAM_SIZE_MB=' "$ZRAM_CONF"; then
     sed -i "s/^ZRAM_SIZE_MB=.*/ZRAM_SIZE_MB=${SIZE}/" "$ZRAM_CONF"
@@ -32,12 +40,13 @@ set_zram_size() {
     echo "ZRAM_SIZE_MB=${SIZE}" >> "$ZRAM_CONF"
   fi
 
-  echo "[+] 重建 zramswap..."
+  echo "[+] 销毁并重建 zram 设备"
+  swapoff /dev/zram0 2>/dev/null || true
   systemctl stop zramswap 2>/dev/null || true
   modprobe -r zram 2>/dev/null || true
   systemctl start zramswap
 
-  echo "[✓] ZRAM 已设置为 ${SIZE} MB"
+  echo "[✓] ZRAM 已设置为 ${SIZE} MB（已强制生效）"
 }
 
 zram_on() {
