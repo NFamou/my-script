@@ -1,7 +1,6 @@
 #!/bin/sh
 # alpine-tcp-tuning-v2.sh
 # 适用环境: Alpine Linux + LXC + 128MB RAM + 代理服务
-# 优化重点: 引入 BBR 算法, 维持 8MB 安全缓存, 提升高延迟下的四线程稳定性
 # 回滚命令: rm -f /etc/sysctl.d/99-tcp-tuning.conf && sysctl --system
 
 CONF_FILE="/etc/sysctl.d/99-tcp-tuning.conf"
