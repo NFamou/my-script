@@ -1,6 +1,7 @@
 #!/bin/sh
 # alpine-tcp-tuning.sh
 # For: Alpine Linux + LXC + 128MB + Proxy Service
+# 回滚命令 rm -f /etc/sysctl.d/99-tcp-tuning.conf && sysctl --system
 
 CONF_FILE="/etc/sysctl.d/99-tcp-tuning.conf"
 
