@@ -1,213 +1,167 @@
 #!/bin/bash
-# 一键添加 socks5-warp 路由规则到 /etc/V2bX/route.json
-# 支持 Shadowsocks / Trojan / Vless
-# 自动检测 /etc/V2bX/custom_outbound.json 是否存在 socks5-warp 出口
+# =================================================================
+# V2bX 路由配置 + WARP 自动保活集成脚本 (强化 ID 查重版)
+# =================================================================
 
 set -e
 
+# --- 基础配置 ---
 CONFIG_FILE="/etc/V2bX/route.json"
 OUTBOUND_FILE="/etc/V2bX/custom_outbound.json"
 TMP_FILE="/tmp/v2bx.tmp"
 API_PREFIX="[https://node-api114514.6868319.xyz]"
+MONITOR_SCRIPT_PATH="/usr/local/bin/warp_keepalive.sh"
 
 # ===============================
-# 0️⃣ 检测是否 root
+# 0️⃣ 环境检查
 # ===============================
 if [ "$EUID" -ne 0 ]; then
   echo "❌ 请使用 root 用户运行该脚本"
   exit 1
 fi
 
-# ===============================
-# 1️⃣ 检测并安装 jq
-# ===============================
-if ! command -v jq >/dev/null 2>&1; then
-  echo "⚠️ 未检测到 jq，正在尝试安装..."
+echo "🔍 正在检查系统依赖..."
+PACKAGES_NEEDED=""
+if ! command -v jq >/dev/null 2>&1; then PACKAGES_NEEDED="$PACKAGES_NEEDED jq"; fi
+if ! command -v curl >/dev/null 2>&1; then PACKAGES_NEEDED="$PACKAGES_NEEDED curl"; fi
+
+if [ -n "$PACKAGES_NEEDED" ]; then
+  echo "⚠️ 正在安装缺少组件: $PACKAGES_NEEDED ..."
   if [ -f /etc/debian_version ]; then
-    apt update
-    apt install -y jq
+    apt update -y && apt install -y $PACKAGES_NEEDED
   elif [ -f /etc/redhat-release ]; then
-    if command -v dnf >/dev/null 2>&1; then
-      dnf install -y jq
-    else
-      yum install -y jq
-    fi
+    dnf install -y $PACKAGES_NEEDED || yum install -y $PACKAGES_NEEDED
   else
-    echo "❌ 无法识别的 Linux 发行版，请手动安装 jq"
+    echo "❌ 无法自动安装依赖，请手动安装 jq 和 curl"
     exit 1
   fi
 fi
 
-if ! command -v jq >/dev/null 2>&1; then
-  echo "❌ jq 安装失败，请手动处理"
-  exit 1
-fi
-echo "✅ jq 已就绪"
+# ===============================
+# 1️⃣ 配置 socks5-warp Outbound (出口查重)
+# ===============================
+echo ""
+echo "================ 1. V2bX Outbound 配置 ================"
+read -p "请输入 WARP 本地 SOCKS5 端口 (默认 40000): " INPUT_V2BX_PORT
+V2BX_PORT=${INPUT_V2BX_PORT:-40000}
 
-# ===============================
-# 2️⃣ 检查 route.json
-# ===============================
-if [ ! -f "$CONFIG_FILE" ]; then
-  echo "❌ 未找到配置文件: $CONFIG_FILE"
-  exit 1
-fi
-
-# ===============================
-# 3️⃣ 检查 / 创建 socks5-warp outbound
-# ===============================
-echo "🔍 检查 socks5-warp outbound..."
 if [ ! -f "$OUTBOUND_FILE" ]; then
-  echo "⚠️ 未找到 $OUTBOUND_FILE，正在创建..."
   echo '{"outbounds":[]}' > "$OUTBOUND_FILE"
 fi
 
-# 检测是否已存在 socks5-warp
+# 查重：标签 tag 为 socks5-warp
 if jq -e '.[]? | select(.tag=="socks5-warp")' "$OUTBOUND_FILE" >/dev/null 2>&1 \
    || jq -e '.outbounds[]? | select(.tag=="socks5-warp")' "$OUTBOUND_FILE" >/dev/null 2>&1; then
-  echo "✅ socks5-warp outbound 已存在，保持不变。"
+  echo "⚠️  socks5-warp 出口配置已存在，跳过添加。"
 else
+  SERVER_OBJ=$(jq -n --argjson port "$V2BX_PORT" '{
+    "tag": "socks5-warp",
+    "protocol": "socks",
+    "settings": {
+      "servers": [{"address": "127.0.0.1", "port": $port}]
+    }
+  }')
+
   TOP_TYPE=$(jq -r 'type' "$OUTBOUND_FILE")
   if [ "$TOP_TYPE" = "array" ]; then
-    # 顶层是数组
-    jq '
-      . += [
-        {
-          "tag": "socks5-warp",
-          "protocol": "socks",
-          "settings": {
-            "servers": [
-              {
-                "address": "127.0.0.1",
-                "port": 40000
-              }
-            ]
-          }
-        }
-      ]
-    ' "$OUTBOUND_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$OUTBOUND_FILE"
-    echo "✅ socks5-warp port-40000 outbound 已添加（数组模式）。"
+    jq ". += [$SERVER_OBJ]" "$OUTBOUND_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$OUTBOUND_FILE"
   elif [ "$TOP_TYPE" = "object" ]; then
-    # 顶层是对象
-    jq '
-      .outbounds |= (. // []) + [
-        {
-          "tag": "socks5-warp",
-          "protocol": "socks",
-          "settings": {
-            "servers": [
-              {
-                "address": "127.0.0.1",
-                "port": 40000
-              }
-            ]
-          }
-        }
-      ]
-    ' "$OUTBOUND_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$OUTBOUND_FILE"
-    echo "✅ socks5-warp port-40000 outbound 已添加（对象模式）。"
-  else
-    echo "❌ 无法识别的 JSON 结构，请检查 $OUTBOUND_FILE"
-    exit 1
+    jq ".outbounds |= (. // []) + [$SERVER_OBJ]" "$OUTBOUND_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$OUTBOUND_FILE"
   fi
+  echo "✅ 已成功添加 socks5-warp 出口配置。"
 fi
 
 # ===============================
-# 4️⃣ 选择入站类型
+# 2️⃣ 配置路由规则 (ID 强化查重)
 # ===============================
-echo
-echo "请选择入站类型："
+echo ""
+echo "================ 2. 路由规则绑定 ================"
+echo "请选择入站协议类型："
 echo "1) Shadowsocks"
 echo "2) Trojan"
 echo "3) Vless"
 read -p "请输入编号 (1/2/3): " TYPE_CHOICE
 
 case "$TYPE_CHOICE" in
-  1)
-    read -p "请输入 Shadowsocks ID: " PORT
-    INBOUND_TAG="${API_PREFIX}-shadowsocks:${PORT}"
-    ;;
-  2)
-    read -p "请输入 Trojan ID: " PORT
-    INBOUND_TAG="${API_PREFIX}-trojan:${PORT}"
-    ;;
-  3)
-    read -p "请输入 VLESS ID: " PORT
-    INBOUND_TAG="${API_PREFIX}-vless:${PORT}"
-    ;;
-  *)
-    echo "❌ 输入无效，请输入 1 / 2 / 3"
-    exit 1
-    ;;
+  1) read -p "请输入 ID (端口号): " PORT; INBOUND_TAG="${API_PREFIX}-shadowsocks:${PORT}" ;;
+  2) read -p "请输入 ID (端口号): " PORT; INBOUND_TAG="${API_PREFIX}-trojan:${PORT}" ;;
+  3) read -p "请输入 ID (端口号): " PORT; INBOUND_TAG="${API_PREFIX}-vless:${PORT}" ;;
+  *) echo "❌ 无效输入"; exit 1 ;;
 esac
 
-# ===============================
-# 5️⃣ 检查 route 规则是否已存在
-# ===============================
-if jq -e --arg tag "$INBOUND_TAG" '.rules[]? | select(.inboundTag[]? == $tag)' "$CONFIG_FILE" >/dev/null 2>&1; then
-  echo "⚠️ 已存在 inboundTag: $INBOUND_TAG，无需重复添加。"
-  exit 0
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "❌ 配置文件 $CONFIG_FILE 不存在"
+else
+    # 【强化查重】：只检测 ID（如 :379），不检测前面的协议字符串
+    if jq -e --arg id ":$PORT" '.rules[]? | .inboundTag[]? | select(contains($id))' "$CONFIG_FILE" >/dev/null 2>&1; then
+      echo "⚠️  查重失败：ID [$PORT] 已存在于路由规则中（无论何种协议），操作已取消。"
+    else
+      jq --arg tag "$INBOUND_TAG" '
+        .rules |= (. // []) |
+        (any(.rules[]?; .outboundTag == "IPv4_out")) as $hasOut |
+        if $hasOut then
+          .rules |= map(if .outboundTag == "IPv4_out" then ({"type": "field", "outboundTag": "socks5-warp", "inboundTag": [$tag], "network": "udp,tcp"}, .) else . end)
+        else
+          .rules += [{"type": "field", "outboundTag": "socks5-warp", "inboundTag": [$tag], "network": "udp,tcp"}]
+        end
+      ' "$CONFIG_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$CONFIG_FILE"
+      echo "✅ 已成功插入路由规则: $INBOUND_TAG -> socks5-warp"
+    fi
 fi
 
 # ===============================
-# 6️⃣ 插入路由规则
+# 3️⃣ V2bX 重启
 # ===============================
-jq --arg tag "$INBOUND_TAG" '
-  .rules |= (. // []) |
-  (any(.rules[]?; .outboundTag == "IPv4_out")) as $hasOut |
-
-  if $hasOut then
-    .rules |= map(
-      if .outboundTag == "IPv4_out" then
-        {
-          "type": "field",
-          "outboundTag": "socks5-warp",
-          "inboundTag": [$tag],
-          "network": "udp,tcp"
-        },
-        .
-      else
-        .
-      end
-    )
-  else
-    .rules += [
-      {
-        "type": "field",
-        "outboundTag": "socks5-warp",
-        "inboundTag": [$tag],
-        "network": "udp,tcp"
-      }
-    ]
-  end
-' "$CONFIG_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$CONFIG_FILE"
-
-echo "✅ 已成功插入 socks5-warp port-40000 路由规则"
-echo "   inboundTag = $INBOUND_TAG"
+echo ""
+read -p "是否立即重启 V2bX 服务? (y/n): " RESTART_CHOICE
+if [[ "$RESTART_CHOICE" =~ ^[yY]$ ]]; then
+  systemctl restart V2bX && echo "✅ V2bX 已重启" || echo "❌ 重启失败，请手动检查"
+fi
 
 # ===============================
-# 7️⃣ 提示是否重启 V2bX
+# 4️⃣ WARP 自动保活配置 (独立端口)
 # ===============================
-read -p "是否需要立即重启 V2bX 服务以生效路由规则? (y/n): " RESTART_CHOICE
-case "$RESTART_CHOICE" in
-  y|Y)
-    if command -v systemctl >/dev/null 2>&1; then
-      echo "🔄 正在重启 V2bX 服务..."
-      systemctl restart V2bX
-      if [ $? -eq 0 ]; then
-        echo "✅ V2bX 服务已成功重启"
-      else
-        echo "❌ V2bX 重启失败，请手动检查"
-      fi
+echo ""
+echo "================ 3. WARP 自动保活配置 ================"
+read -p "是否添加 WARP 定时检测任务? (y/n): " ADD_MONITOR
+
+if [[ "$ADD_MONITOR" =~ ^[yY]$ ]]; then
+  read -p "请输入要检测的 SOCKS5 端口 (默认使用 $V2BX_PORT): " INPUT_MONITOR_PORT
+  MONITOR_PORT=${INPUT_MONITOR_PORT:-$V2BX_PORT}
+
+  echo "请选择 WARP 重启方式："
+  echo "  1) warp y (WireGuard)"
+  echo "  2) warp r (Client)"
+  read -p "请选择 [1-2]: " MODE_CHOICE
+
+  case "$MODE_CHOICE" in
+      1) TARGET_CMD="warp y" ;;
+      2) TARGET_CMD="warp r" ;;
+      *) TARGET_CMD="" ;;
+  esac
+
+  if [ -n "$TARGET_CMD" ]; then
+    cat > "$MONITOR_SCRIPT_PATH" <<EOF
+#!/bin/bash
+# WARP 保活脚本 - 检测端口: $MONITOR_PORT
+CHECK_URL="https://www.cloudflare.com/cgi-bin/trace"
+PROXY="127.0.0.1:$MONITOR_PORT"
+if ! curl --socks5 "\$PROXY" -s --max-time 10 "\$CHECK_URL" | grep -q "warp=on\|warp=plus\|warp-r"; then
+    echo "[\$(date)] ⚠️ WARP 异常，尝试执行: $TARGET_CMD"
+    $TARGET_CMD
+fi
+EOF
+    chmod +x "$MONITOR_SCRIPT_PATH"
+
+    # Crontab 查重
+    if ! crontab -l 2>/dev/null | grep -Fq "$MONITOR_SCRIPT_PATH"; then
+      (crontab -l 2>/dev/null; echo "*/5 * * * * /bin/bash $MONITOR_SCRIPT_PATH >> /var/log/warp_monitor.log 2>&1") | crontab -
+      echo "✅ Crontab 任务已添加 (每5分钟执行一次)。"
     else
-      echo "❌ systemctl 未找到，请手动重启 V2bX"
+      echo "⚠️ Crontab 任务已存在，跳过添加。"
     fi
-    ;;
-  n|N)
-    echo "⚠️ 路由已更新，但 V2bX 未重启，需要手动重启后生效"
-    ;;
-  *)
-    echo "⚠️ 输入无效，跳过重启操作"
-    ;;
-esac
+  fi
+fi
 
-echo "🎉 全部操作完成"
+echo ""
+echo "🎉 所有流程已处理完毕。"
