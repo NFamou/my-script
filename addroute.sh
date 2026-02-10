@@ -1,6 +1,6 @@
 #!/bin/bash
 # 一键添加 socks5-warp 路由规则到 /etc/V2bX/route.json
-# 支持 Shadowsocks / Trojan / VLESS
+# 支持 Shadowsocks / Trojan / Vless
 # 自动检测 /etc/V2bX/custom_outbound.json 是否存在 socks5-warp 出口
 
 set -e
@@ -85,7 +85,7 @@ else
         }
       ]
     ' "$OUTBOUND_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$OUTBOUND_FILE"
-    echo "✅ socks5-warp outbound 已添加（数组模式）。"
+    echo "✅ socks5-warp port-40000 outbound 已添加（数组模式）。"
   elif [ "$TOP_TYPE" = "object" ]; then
     # 顶层是对象
     jq '
@@ -104,7 +104,7 @@ else
         }
       ]
     ' "$OUTBOUND_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$OUTBOUND_FILE"
-    echo "✅ socks5-warp outbound 已添加（对象模式）。"
+    echo "✅ socks5-warp port-40000 outbound 已添加（对象模式）。"
   else
     echo "❌ 无法识别的 JSON 结构，请检查 $OUTBOUND_FILE"
     exit 1
@@ -181,7 +181,7 @@ jq --arg tag "$INBOUND_TAG" '
   end
 ' "$CONFIG_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$CONFIG_FILE"
 
-echo "✅ 已成功插入 socks5-warp 路由规则"
+echo "✅ 已成功插入 socks5-warp port-40000 路由规则"
 echo "   inboundTag = $INBOUND_TAG"
 
 # ===============================
