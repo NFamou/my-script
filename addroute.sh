@@ -91,7 +91,7 @@ case "$TYPE_CHOICE" in
   *) echo "❌ 无效输入"; exit 1 ;;
 esac
 
-read -p "请输入入站 ID (端口号): " PORT
+read -p "请输入入站 ID: " PORT
 INBOUND_TAG="${API_PREFIX}-${PROTO}:${PORT}"
 
 if [ ! -f "$CONFIG_FILE" ]; then
