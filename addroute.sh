@@ -35,15 +35,15 @@ if [ -n "$PACKAGES_NEEDED" ]; then
 fi
 
 # ===============================
-# 1️⃣ 参数设置 (API 前缀自动补全)
+# 1️⃣ 参数设置 (API地址前缀自动补全)
 # ===============================
 echo ""
 echo "================ 1. 全局参数设置 ================"
-read -p "请输入Xboard API地址(需带https://): " INPUT_PREFIX
+read -p "请输入Xboard API地址: " INPUT_PREFIX
 USER_PREFIX=${INPUT_PREFIX:-$DEFAULT_API_RAW}
 
-# 智能补全方括号
-if [[ "$USER_PREFIX" == [* ]]; then
+# 智能补全方括号：修正后的逻辑
+if [[ "$USER_PREFIX" == \[* ]]; then
     API_PREFIX="$USER_PREFIX"
 else
     API_PREFIX="[$USER_PREFIX]"
