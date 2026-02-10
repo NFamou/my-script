@@ -118,7 +118,7 @@ echo
 echo "请选择入站类型："
 echo "1) Shadowsocks"
 echo "2) Trojan"
-echo "3) VLESS"
+echo "3) Vless"
 read -p "请输入编号 (1/2/3): " TYPE_CHOICE
 
 case "$TYPE_CHOICE" in
