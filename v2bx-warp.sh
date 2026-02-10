@@ -84,13 +84,13 @@ echo "================ 2. 路由规则绑定 ================"
 echo "请选择入站类型："
 echo "1) Shadowsocks"
 echo "2) Trojan"
-echo "3) VLESS"
+echo "3) Vless"
 read -p "请输入编号 (1/2/3): " TYPE_CHOICE
 
 case "$TYPE_CHOICE" in
   1) read -p "请输入 Shadowsocks ID: " PORT; INBOUND_TAG="${API_PREFIX}-shadowsocks:${PORT}" ;;
   2) read -p "请输入 Trojan ID: " PORT; INBOUND_TAG="${API_PREFIX}-trojan:${PORT}" ;;
-  3) read -p "请输入 VLESS ID: " PORT; INBOUND_TAG="${API_PREFIX}-vless:${PORT}" ;;
+  3) read -p "请输入 Vless ID: " PORT; INBOUND_TAG="${API_PREFIX}-vless:${PORT}" ;;
   *) echo "❌ 输入无效"; exit 1 ;;
 esac
 
