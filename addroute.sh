@@ -53,10 +53,11 @@ echo "📢 当前使用的API地址: $API_PREFIX"
 read -p "请输入 WARP 本地 SOCKS5 端口 (回车默认使用 40000): " INPUT_V2BX_PORT
 V2BX_PORT=${INPUT_V2BX_PORT:-40000}
 
-# --- 出口配置查重 ---
+# --- 出口配置查重与添加 ---
 if [ ! -f "$OUTBOUND_FILE" ]; then echo '{"outbounds":[]}' > "$OUTBOUND_FILE"; fi
-if jq -e '.[]? | select(.tag=="socks5-warp")' "$OUTBOUND_FILE" >/dev/null 2>&1 \
-   || jq -e '.outbounds[]? | select(.tag=="socks5-warp")' "$OUTBOUND_FILE" >/dev/null 2>&1; then
+
+# 精确递归查重
+if jq -e '.. | select(.tag? == "socks5-warp")' "$OUTBOUND_FILE" >/dev/null 2>&1; then
   echo "✅ socks5-warp 出口已存在，跳过配置。"
 else
   SERVER_OBJ=$(jq -n --argjson port "$V2BX_PORT" '{
@@ -64,11 +65,15 @@ else
     "protocol": "socks",
     "settings": { "servers": [{"address": "127.0.0.1", "port": $port}] }
   }')
+  
   TOP_TYPE=$(jq -r 'type' "$OUTBOUND_FILE")
   if [ "$TOP_TYPE" = "array" ]; then
     jq ". += [$SERVER_OBJ]" "$OUTBOUND_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$OUTBOUND_FILE"
-  else
+  elif [ "$TOP_TYPE" = "object" ]; then
+    # 针对对象模式，确保插入到 outbounds 数组中
     jq ".outbounds |= (. // []) + [$SERVER_OBJ]" "$OUTBOUND_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$OUTBOUND_FILE"
+  else
+    echo "❌ 无法识别的 JSON 结构，跳过出口配置。"
   fi
   echo "✅ 已成功添加 socks5-warp 出口。"
 fi
