@@ -98,8 +98,8 @@ show_status() {
         # 实时出口网络测试
         echo -ne " -> "
         local start_time=$(date +%s%3N)
-        # 尝试通过本地 WARP 端口访问谷歌
-        if res=$(curl --socks5 "127.0.0.1:$out_port" -sI --max-time 3 "https://www.google.com/generate_204" | grep "HTTP"); then
+        # 尝试通过本地 WARP 端口访问谷歌 (http测试)
+        if res=$(curl --socks5 "127.0.0.1:$out_port" -sI --max-time 3 "http://www.google.com/generate_204" | grep "HTTP"); then
             local end_time=$(date +%s%3N)
             local diff=$((end_time - start_time))
             echo -e "${GREEN}[ 连通 ]${NC} ${YELLOW}${diff}ms${NC}"
