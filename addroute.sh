@@ -73,7 +73,7 @@ add_outbound() {
     fi
 }
 
-# 2. 添加路由规则
+# 2. 节点添加路由配置
 add_route() {
     echo -e "\n${PURPLE}--- [ 2. 绑定路由规则 ] ---${NC}"
     read -p "请输入 Xboard API地址: " INPUT_PREFIX
@@ -170,7 +170,7 @@ init_env
 while true; do
     print_title
     echo -e "  ${CYAN}1.${NC} 添加出口配置 (Outbound)"
-    echo -e "  ${CYAN}2.${NC} 添加路由绑定 (Route)"
+    echo -e "  ${CYAN}2.${NC} 添加节点路由配置 (Route)"
     echo -e "  ${CYAN}3.${NC} WARP 配置保活 (Keepalive Warp)"
     echo -e "  ${CYAN}4.${NC} 重启 V2bX 服务"
     echo -e "  ${YELLOW}5. 查看当前配置概览 (Dashboard)${NC}"
