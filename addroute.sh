@@ -73,9 +73,9 @@ add_outbound() {
     fi
 }
 
-# 2. 节点添加路由配置
+# 2. 添加节点路由规则
 add_route() {
-    echo -e "\n${PURPLE}--- [ 2. 绑定路由规则 ] ---${NC}"
+    echo -e "\n${PURPLE}--- [ 2. 添加节点路由规则 ] ---${NC}"
     read -p "请输入 Xboard API地址: " INPUT_PREFIX
     local user_prefix=${INPUT_PREFIX:-$DEFAULT_API_RAW}
     local api_prefix; if [[ "$user_prefix" == \[* ]]; then api_prefix="$user_prefix"; else api_prefix="[$user_prefix]"; fi
@@ -105,32 +105,53 @@ add_route() {
     fi
 }
 
-# 3. 查看状态仪表盘
+# 3. 查看状态栏
 show_status() {
-    echo -e "\n${PURPLE}--- [ 5. 配置概览仪表盘 ] ---${NC}"
+    clear
+    echo -e "${BLUE}╔══════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║             📊  V2bX 配置概览仪表盘              ║${NC}"
+    echo -e "${BLUE}╚══════════════════════════════════════════════════════╝${NC}"
+    echo ""
+
+    # --- 基础状态部分 ---
+    echo -e "${CYAN}📌 基础服务状态${NC}"
+    echo -e "${BLUE}──────────────────────────────────────────────────────${NC}"
     
     # 1. 检查出口
-    local out_port=$(jq -r '.. | select(.tag? == "socks5-warp") | .settings.servers[0].port // "未配置"' "$OUTBOUND_FILE" 2>/dev/null || echo "文件解析错误")
-    echo -ne "📡 WARP 出口状态: "
-    if [[ "$out_port" == "未配置" ]]; then echo -e "${RED}未配置${NC}"; else echo -e "${GREEN}运行中 (端口: $out_port)${NC}"; fi
+    local out_port=$(jq -r '.. | select(.tag? == "socks5-warp") | .settings.servers[0].port // "未配置"' "$OUTBOUND_FILE" 2>/dev/null || echo "error")
+    printf "  %-16s" "📡 WARP 出口:"
+    if [[ "$out_port" == "error" ]] || [[ "$out_port" == "未配置" ]]; then
+        echo -e "${RED}未配置${NC}"
+    else
+        echo -e "${GREEN}运行中${NC} (端口: $out_port)"
+    fi
 
-    # 2. 检查添加的节点
-    echo -e "🔗 已添加路由节点:"
+    # 2. 检查保活
+    printf "  %-16s" "⏰ 自动保活:"
+    if crontab -l 2>/dev/null | grep -Fq "$MONITOR_SCRIPT_PATH"; then
+        echo -e "${GREEN}已开启${NC} (检测周期: 5min)"
+    else
+        echo -e "${RED}未开启${NC}"
+    fi
+    echo ""
+
+    # --- 节点列表部分 ---
+    echo -e "${CYAN}📌 节点路由规则详情${NC}"
+    echo -e "${BLUE}──────────────────────────────────────────────────────${NC}"
+    
     local nodes=$(jq -r '.rules[] | select(.outboundTag == "socks5-warp") | .inboundTag[]' "$CONFIG_FILE" 2>/dev/null || echo "")
     if [ -z "$nodes" ]; then
-        echo -e "   ${YELLOW}(暂无绑定节点)${NC}"
+        echo -e "   ${YELLOW}(当前暂无绑定的节点 ID)${NC}"
     else
-        echo "$nodes" | sed "s/^/   ${CYAN}●${NC} /"
+        # 统计节点数量
+        local count=$(echo "$nodes" | wc -l)
+        echo "$nodes" | sed "s/^/   ${PURPLE}●${NC} /"
+        echo -e "\n   ---------------------------------"
+        echo -e "   📊 共计绑定节点: ${GREEN}$count${NC} 个"
     fi
-
-    # 3. 检查WARP保活配置
-    echo -ne "⏰ WARP 自动保活: "
-    if crontab -l 2>/dev/null | grep -Fq "$MONITOR_SCRIPT_PATH"; then
-        echo -e "${GREEN}✅ 已开启 (5min/周期)${NC}"
-    else
-        echo -e "${RED}❌ 未开启${NC}"
-    fi
-    echo -e "${PURPLE}------------------------------------------${NC}"
+    
+    echo -e ""
+    echo -e "${BLUE}══════════════════════════════════════════════════════${NC}"
 }
 
 # 4. 保活配置
@@ -170,10 +191,10 @@ init_env
 while true; do
     print_title
     echo -e "  ${CYAN}1.${NC} 添加出口配置 (Outbound)"
-    echo -e "  ${CYAN}2.${NC} 添加节点路由配置 (Route)"
+    echo -e "  ${CYAN}2.${NC} 添加节点路由规则 (Route)"
     echo -e "  ${CYAN}3.${NC} WARP 配置保活 (Keepalive Warp)"
     echo -e "  ${CYAN}4.${NC} 重启 V2bX 服务"
-    echo -e "  ${YELLOW}5. 查看当前配置概览 (Dashboard)${NC}"
+    echo -e "  ${YELLOW}5. 查看当前配置 (Dashboard)${NC}"
     echo -e "  ${RED}0. 退出脚本${NC}"
     echo -e "${BLUE}==================================================${NC}"
     read -p "请选择操作 [0-5]: " choice
