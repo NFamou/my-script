@@ -145,7 +145,7 @@ setup_keepalive() {
     cat > "$MONITOR_SCRIPT_PATH" <<EOF
 #!/bin/bash
 PROXY="127.0.0.1:$m_port"
-if ! curl --socks5 "\$PROXY" -s --max-time 10 "https://www.cloudflare.com/cdn-cgi/trace" | grep -Eq "warp=(on|plus)|warp-r"; then
+if ! curl -4 --socks5 "\$PROXY" -s --max-time 10 "https://www.cloudflare.com/cdn-cgi/trace" | grep -Eq "warp=(on|plus)|warp-r"; then
     echo "[\$(date)] 检测到异常，重启: $cmd"; $cmd
 fi
 EOF
