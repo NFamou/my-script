@@ -38,7 +38,6 @@ if [ "$OS_FAMILY" = "debian" ]; then
     iptables-persistent
 
 elif [ "$OS_FAMILY" = "rhel" ]; then
-  # AlmaLinux 10 放弃了 iptables-services，改用原生的 nftables
   dnf install -y \
     curl \
     wget \
@@ -108,9 +107,9 @@ elif [ "$OS_FAMILY" = "rhel" ]; then
   # ⚠️ SSH 放行（如需开启，请取消下行的注释）
   # nft add rule ip6 filter input tcp dport 22 accept
 
-  # ICMPv6 必要规则 (邻居发现与 MTU 协商)
-  nft add rule ip6 filter input icmpv6 type neighbor-solicitation accept
-  nft add rule ip6 filter input icmpv6 type neighbor-advertisement accept
+  # ICMPv6 必要规则 (适配 AlmaLinux 10 新版 nftables 语法)
+  nft add rule ip6 filter input icmpv6 type nd-neighbor-solicit accept
+  nft add rule ip6 filter input icmpv6 type nd-neighbor-advert accept
   nft add rule ip6 filter input icmpv6 type packet-too-big accept
 
   # 限制探测 (阻止 ping6、traceroute6 等)
@@ -118,7 +117,7 @@ elif [ "$OS_FAMILY" = "rhel" ]; then
   nft add rule ip6 filter output icmpv6 type time-exceeded drop
   nft add rule ip6 filter output icmpv6 type destination-unreachable drop
 
-  # 持久化规则 (保存到 AlmaLinux 标准的 nftables 配置文件中)
+  # 持久化规则
   echo "[+] 保存规则并重启 nftables..."
   nft list ruleset > /etc/nftables/main.nft
   systemctl restart nftables
