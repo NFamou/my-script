@@ -54,73 +54,76 @@ fi
 if [ "$OS_FAMILY" = "debian" ]; then
   echo "[+] 正在配置 Debian/Ubuntu 防火墙 (ip6tables)..."
   
-  # 清空旧规则
   ip6tables -F
   ip6tables -X
 
-  # 设置默认策略
   ip6tables -P INPUT DROP
   ip6tables -P FORWARD DROP
   ip6tables -P OUTPUT ACCEPT
 
-  # 已建立连接
+  # 1. 允许已建立的连接（保证 curl 等出站请求能收到回包）
   ip6tables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
-  # ⚠️ SSH 放行（原脚本默认注释）
+  # ⚠️ SSH 放行（如需开启请取消注释）
   # ip6tables -A INPUT -p tcp --dport 22 -j ACCEPT
 
-  # ICMPv6 必要规则
+  # 2. 允许 IPv6 底层生存所必需的 ICMPv6 报文
   ip6tables -A INPUT -p ipv6-icmp --icmpv6-type neighbor-solicitation -j ACCEPT
   ip6tables -A INPUT -p ipv6-icmp --icmpv6-type neighbor-advertisement -j ACCEPT
   ip6tables -A INPUT -p ipv6-icmp --icmpv6-type packet-too-big -j ACCEPT
 
-  # 限制探测
+  # 3. 拦截外部 Ping 探测
   ip6tables -A INPUT -p ipv6-icmp --icmpv6-type echo-request -j DROP
+  
+  # 拦截 Traceroute 等探测回应
   ip6tables -A OUTPUT -p ipv6-icmp --icmpv6-type time-exceeded -j DROP
   ip6tables -A OUTPUT -p ipv6-icmp --icmpv6-type destination-unreachable -j DROP
 
-  # 持久化规则
   echo "[+] 保存规则并设置开机自启..."
   mkdir -p /etc/iptables
   ip6tables-save > /etc/iptables/rules.v6
 
-
 elif [ "$OS_FAMILY" = "rhel" ]; then
   echo "[+] 正在配置 AlmaLinux/RHEL 防火墙 (nftables)..."
   
-  # 启用并启动 nftables 服务
+  # 规避冲突：关闭并禁用 firewalld
+  systemctl stop firewalld || true
+  systemctl disable firewalld || true
+
   systemctl enable nftables
   systemctl start nftables
 
-  # 清空现有的独立 IPv6 过滤表（不影响 IPv4 流量）
+  # 清空旧规则并创建全新纯净的 ip6 表
   nft delete table ip6 filter 2>/dev/null || true
   nft add table ip6 filter
 
-  # 设置默认策略 (INPUT/FORWARD 拒绝，OUTPUT 允许)
+  # 设置默认策略
   nft 'add chain ip6 filter input { type filter hook input priority filter ; policy drop ; }'
   nft 'add chain ip6 filter forward { type filter hook forward priority filter ; policy drop ; }'
   nft 'add chain ip6 filter output { type filter hook output priority filter ; policy accept ; }'
 
-  # 允许已建立的连接
+  # 1. 允许已建立的连接（保证 curl 等出站请求能收到回包，这一步极其重要！）
   nft add rule ip6 filter input ct state { established, related } accept
 
-  # ⚠️ SSH 放行（如需开启，请取消下行的注释）
+  # ⚠️ SSH 放行（如需开启请取消注释）
   # nft add rule ip6 filter input tcp dport 22 accept
 
-  # ICMPv6 必要规则 (适配 AlmaLinux 10 新版 nftables 语法)
+  # 2. 允许 IPv6 底层生存所必需的 NDP 协议和 MTU 协商
   nft add rule ip6 filter input icmpv6 type nd-neighbor-solicit accept
   nft add rule ip6 filter input icmpv6 type nd-neighbor-advert accept
   nft add rule ip6 filter input icmpv6 type packet-too-big accept
 
-  # 限制探测 (阻止 ping6、traceroute6 等)
+  # 3. 拦截外部 Ping 探测
   nft add rule ip6 filter input icmpv6 type echo-request drop
+  
+  # 拦截 Traceroute 等探测回应
   nft add rule ip6 filter output icmpv6 type time-exceeded drop
   nft add rule ip6 filter output icmpv6 type destination-unreachable drop
 
-  # 持久化规则
+  # 4. 写入 AlmaLinux 10 官方正确的持久化路径
   echo "[+] 保存规则并重启 nftables..."
-  nft list ruleset > /etc/nftables/main.nft
+  nft list ruleset > /etc/sysconfig/nftables.conf
   systemctl restart nftables
 fi
 
-echo "[✓] 完成。防火墙规则已成功适配当前系统架构并生效。"
+echo "[✓] 完成！通用 IPv6 防火墙脚本已完美执行。"
